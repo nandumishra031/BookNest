@@ -21,7 +21,7 @@ class MainActivity : ComponentActivity() {
             BookNestTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Greeting(
-                        name = "nandani",
+                        name = "nandani mishra",
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
