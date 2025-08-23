@@ -26,6 +26,9 @@ interface UserDao {
 
     @Query("UPDATE users SET isLoggedIn = 1 WHERE id = :userId")
     suspend fun loginUser(userId: String)
+
+    @Query("UPDATE users SET profileImageUrl = :imagePath WHERE id = :userId")
+    suspend fun updateUserProfileImage(userId: String, imagePath: String)
 }
 
 @Dao
@@ -59,6 +62,9 @@ interface BookDao {
 
     @Query("UPDATE books SET stockQuantity = stockQuantity - :quantity WHERE id = :bookId")
     suspend fun updateStock(bookId: String, quantity: Int)
+
+    @Query("UPDATE books SET coverImageUrl = :imagePath WHERE id = :bookId")
+    suspend fun updateBookCoverImage(bookId: String, imagePath: String)
 }
 
 @Dao

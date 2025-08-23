@@ -8,6 +8,7 @@ import androidx.navigation.NavBackStackEntry
 import com.booknest.app.ui.auth.LoginScreen
 import com.booknest.app.ui.auth.SignUpScreen
 import com.booknest.app.ui.book.BookDetailsScreen
+import com.booknest.app.ui.books.MyBooksScreen
 import com.booknest.app.ui.cart.CartScreen
 import com.booknest.app.ui.cart.CheckoutScreen
 import com.booknest.app.ui.home.HomeScreen
@@ -19,6 +20,10 @@ import com.booknest.app.ui.rentals.RentalsScreen
 import com.booknest.app.ui.rentals.RentalItem
 import com.booknest.app.ui.rental.RentalViewerScreen
 import com.booknest.app.ui.sell.SellBookScreen
+import com.booknest.app.ui.settings.SettingsScreen
+import com.booknest.app.ui.settings.ChangePasswordScreen
+import com.booknest.app.ui.settings.NotificationSettingsScreen
+import com.booknest.app.ui.settings.PrivacySettingsScreen
 import com.booknest.app.viewmodel.BookNestViewModel
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -85,9 +90,6 @@ fun BookNestNavigation(
                 onBookClick = { book ->
                     navController.navigate("book_details/${book.id}")
                 },
-                onSearchClick = {
-                    // Navigate to search screen
-                },
                 onNotificationClick = {
                     // Navigate to notifications
                 },
@@ -104,26 +106,36 @@ fun BookNestNavigation(
             if (book != null) {
                 BookDetailsScreen(
                     book = book,
+                    currentUser = currentUser, // Pass current user
                     isInWishlist = wishlistItems.any { it.id == book.id },
                     onBackClick = {
                         navController.popBackStack()
                     },
                     onAddToCart = {
-                        viewModel.addToCart(book)
-                        navController.navigate("cart")
+                        // Only add to cart if not own book
+                        if (currentUser?.id != book.seller.id) {
+                            viewModel.addToCart(book)
+                            navController.navigate("cart")
+                        }
                     },
                     onAddToWishlist = {
-                        if (wishlistItems.any { it.id == book.id }) {
-                            viewModel.removeFromWishlist(book.id)
-                        } else {
-                            viewModel.addToWishlist(book)
+                        // Only allow wishlist if not own book
+                        if (currentUser?.id != book.seller.id) {
+                            if (wishlistItems.any { it.id == book.id }) {
+                                viewModel.removeFromWishlist(book.id)
+                            } else {
+                                viewModel.addToWishlist(book)
+                            }
                         }
                     },
                     onSellerClick = {
                         // Navigate to seller profile
                     },
                     onRentClick = {
-                        navController.navigate("rental_viewer/${book.id}")
+                        // Only allow rent if not own book
+                        if (currentUser?.id != book.seller.id) {
+                            navController.navigate("rental_viewer/${book.id}")
+                        }
                     }
                 )
             }
@@ -134,13 +146,14 @@ fun BookNestNavigation(
                 onBackClick = {
                     navController.popBackStack()
                 },
-                onSubmit = { book ->
-                    viewModel.addBook(book) { success, message ->
+                onSubmit = { book, imageUri ->
+                    viewModel.addBookWithImage(book, imageUri) { success, message ->
                         if (success) {
                             navController.navigate("home") {
                                 popUpTo("sell") { inclusive = true }
                             }
                         }
+                        // You can also show a toast or snackbar with the message here
                     }
                 }
             )
@@ -211,7 +224,7 @@ fun BookNestNavigation(
                         navController.navigate("edit_profile")
                     },
                     onSettingsClick = {
-                        // Navigate to settings
+                        navController.navigate("settings")
                     },
                     onLogout = {
                         viewModel.logout()
@@ -228,26 +241,19 @@ fun BookNestNavigation(
 
         composable("my_books") {
             if (currentUser != null) {
-                ProfileScreen(
+                MyBooksScreen(
                     user = currentUser!!,
                     myPurchases = allBooks.take(3),
                     myRentals = allBooks.drop(1).take(2),
                     myListings = allBooks.drop(2).take(2),
-                    wishlist = wishlistItems,
-                    onEditProfile = {
-                        navController.navigate("edit_profile")
-                    },
-                    onSettingsClick = {
-                        // Navigate to settings
-                    },
-                    onLogout = {
-                        viewModel.logout()
-                        navController.navigate("login") {
-                            popUpTo(0) { inclusive = true }
-                        }
-                    },
                     onBookClick = { book ->
                         navController.navigate("book_details/${book.id}")
+                    },
+                    onSellClick = {
+                        navController.navigate("sell")
+                    },
+                    onSearchClick = {
+                        // Navigate to search within my books
                     }
                 )
             }
@@ -279,8 +285,8 @@ fun BookNestNavigation(
                     onBackClick = {
                         navController.popBackStack()
                     },
-                    onSaveClick = { updatedUser ->
-                        viewModel.updateProfile(updatedUser) { success, message ->
+                    onSaveClick = { updatedUser, imageUri ->
+                        viewModel.updateProfile(updatedUser, imageUri) { success, message ->
                             if (success) {
                                 navController.popBackStack()
                             }
@@ -288,9 +294,78 @@ fun BookNestNavigation(
                     },
                     onImageClick = {
                         // Handle image picker
+                    },
+                    onChangePasswordClick = {
+                        navController.navigate("change_password")
+                    },
+                    onNotificationSettingsClick = {
+                        navController.navigate("notification_settings")
+                    },
+                    onPrivacySettingsClick = {
+                        navController.navigate("privacy_settings")
+                    },
+                    onDeleteAccountClick = {
+                        // Handle account deletion - for now just logout
+                        viewModel.logout()
+                        navController.navigate("login") {
+                            popUpTo(0) { inclusive = true }
+                        }
                     }
                 )
             }
+        }
+
+        // Add placeholder routes for settings screens
+        composable("settings") {
+            SettingsScreen(
+                onBackClick = {
+                    navController.popBackStack()
+                },
+                onChangePasswordClick = {
+                    navController.navigate("change_password")
+                },
+                onNotificationSettingsClick = {
+                    navController.navigate("notification_settings")
+                },
+                onPrivacySettingsClick = {
+                    navController.navigate("privacy_settings")
+                },
+                onLogoutClick = {
+                    viewModel.logout()
+                    navController.navigate("login") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+                viewModel = viewModel // Pass ViewModel to SettingsScreen
+            )
+        }
+
+        composable("change_password") {
+            ChangePasswordScreen(
+                onBackClick = {
+                    navController.popBackStack()
+                },
+                onPasswordChanged = {
+                    navController.popBackStack()
+                },
+                viewModel = viewModel
+            )
+        }
+
+        composable("notification_settings") {
+            NotificationSettingsScreen(
+                onBackClick = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable("privacy_settings") {
+            PrivacySettingsScreen(
+                onBackClick = {
+                    navController.popBackStack()
+                }
+            )
         }
     }
 }

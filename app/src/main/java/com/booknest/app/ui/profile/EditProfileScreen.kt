@@ -1,5 +1,6 @@
 package com.booknest.app.ui.profile
 
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,14 +23,19 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.booknest.app.data.User
+import com.booknest.app.ui.utils.ImagePickerBottomSheet
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditProfileScreen(
     user: User,
     onBackClick: () -> Unit,
-    onSaveClick: (User) -> Unit,
-    onImageClick: () -> Unit
+    onSaveClick: (User, Uri?) -> Unit, // Added Uri parameter for image
+    onImageClick: () -> Unit,
+    onChangePasswordClick: () -> Unit = {},
+    onNotificationSettingsClick: () -> Unit = {},
+    onPrivacySettingsClick: () -> Unit = {},
+    onDeleteAccountClick: () -> Unit = {}
 ) {
     var name by remember { mutableStateOf(user.name) }
     var email by remember { mutableStateOf(user.email) }
@@ -38,11 +44,56 @@ fun EditProfileScreen(
     var bio by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var hasChanges by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showImagePicker by remember { mutableStateOf(false) }
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
 
     // Track changes
-    LaunchedEffect(name, email, location, phone, bio) {
+    LaunchedEffect(name, email, location, phone, bio, selectedImageUri) {
         hasChanges = name != user.name || email != user.email ||
-                    location != user.location || phone.isNotBlank() || bio.isNotBlank()
+                    location != user.location || phone.isNotBlank() ||
+                    bio.isNotBlank() || selectedImageUri != null
+    }
+
+    // Image picker bottom sheet
+    if (showImagePicker) {
+        ImagePickerBottomSheet(
+            onImageSelected = { uri ->
+                selectedImageUri = uri
+            },
+            onDismiss = { showImagePicker = false }
+        )
+    }
+
+    // Delete confirmation dialog
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Account") },
+            text = {
+                Text("Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently lost.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteDialog = false
+                        onDeleteAccountClick()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDeleteDialog = false }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     Column(
@@ -71,7 +122,7 @@ fun EditProfileScreen(
                             email = email,
                             location = location
                         )
-                        onSaveClick(updatedUser)
+                        onSaveClick(updatedUser, selectedImageUri)
                     },
                     enabled = hasChanges && !isLoading
                 ) {
@@ -118,24 +169,36 @@ fun EditProfileScreen(
                                     MaterialTheme.colorScheme.primary,
                                     CircleShape
                                 )
-                                .clickable { onImageClick() }
+                                .clickable { showImagePicker = true }
                                 .background(MaterialTheme.colorScheme.primary),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (user.profileImageUrl.isNotEmpty()) {
-                                AsyncImage(
-                                    model = user.profileImageUrl,
-                                    contentDescription = "Profile picture",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
-                            } else {
-                                Text(
-                                    text = user.name.first().toString(),
-                                    style = MaterialTheme.typography.headlineLarge,
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                    fontWeight = FontWeight.Bold
-                                )
+                            // Display selected image or existing profile image
+                            when {
+                                selectedImageUri != null -> {
+                                    AsyncImage(
+                                        model = selectedImageUri,
+                                        contentDescription = "Selected profile picture",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                                user.profileImageUrl.isNotEmpty() -> {
+                                    AsyncImage(
+                                        model = user.profileImageUrl,
+                                        contentDescription = "Current profile picture",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                                else -> {
+                                    Text(
+                                        text = user.name.first().toString(),
+                                        style = MaterialTheme.typography.headlineLarge,
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
 
                             // Camera overlay
@@ -159,9 +222,12 @@ fun EditProfileScreen(
                         Spacer(modifier = Modifier.height(12.dp))
 
                         Text(
-                            text = "Tap to change profile picture",
+                            text = if (selectedImageUri != null) "New photo selected"
+                                  else "Tap to change profile picture",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (selectedImageUri != null) MaterialTheme.colorScheme.primary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = if (selectedImageUri != null) FontWeight.Medium else FontWeight.Normal
                         )
                     }
                 }
@@ -301,21 +367,21 @@ fun EditProfileScreen(
                             icon = Icons.Default.Lock,
                             title = "Change Password",
                             subtitle = "Update your account password",
-                            onClick = { /* Navigate to change password */ }
+                            onClick = onChangePasswordClick
                         )
 
                         ProfileSettingItem(
                             icon = Icons.Default.Notifications,
                             title = "Notification Settings",
                             subtitle = "Manage your notification preferences",
-                            onClick = { /* Navigate to notification settings */ }
+                            onClick = onNotificationSettingsClick
                         )
 
                         ProfileSettingItem(
                             icon = Icons.Default.Security,
                             title = "Privacy Settings",
                             subtitle = "Control your privacy and data",
-                            onClick = { /* Navigate to privacy settings */ }
+                            onClick = onPrivacySettingsClick
                         )
                     }
                 }
@@ -342,7 +408,7 @@ fun EditProfileScreen(
                         )
 
                         OutlinedButton(
-                            onClick = { /* Show delete account dialog */ },
+                            onClick = { showDeleteDialog = true },
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = MaterialTheme.colorScheme.error
@@ -364,6 +430,23 @@ fun EditProfileScreen(
             item {
                 Spacer(modifier = Modifier.height(80.dp)) // Bottom navigation space
             }
+        }
+    }
+
+    // Image Picker Bottom Sheet
+    if (showImagePicker) {
+        ModalBottomSheet(
+            onDismissRequest = { showImagePicker = false }
+        ) {
+            ImagePickerBottomSheet(
+                onImageSelected = { uri ->
+                    // Handle the selected image URI
+                    // In a real app, you'd upload this to your server
+                    selectedImageUri = uri
+                    showImagePicker = false
+                },
+                onDismiss = { showImagePicker = false }
+            )
         }
     }
 }

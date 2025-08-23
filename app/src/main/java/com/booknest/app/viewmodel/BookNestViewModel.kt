@@ -1,5 +1,6 @@
 package com.booknest.app.viewmodel
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -23,6 +24,9 @@ class BookNestViewModel(private val repository: BookNestRepository) : ViewModel(
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    // Dark mode state
+    val isDarkMode = repository.userPreferences.isDarkMode
 
     // Books
     val allBooks = repository.getAllBooks()
@@ -117,15 +121,40 @@ class BookNestViewModel(private val repository: BookNestRepository) : ViewModel(
     }
 
     // Profile Management
-    fun updateProfile(updatedUser: User, onResult: (Boolean, String?) -> Unit) {
+    fun updateProfile(updatedUser: User, imageUri: Uri? = null, onResult: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
             _isLoading.value = true
-            val result = repository.updateUserProfile(updatedUser)
+            val result = if (imageUri != null) {
+                repository.updateUserProfileWithImage(updatedUser, imageUri)
+            } else {
+                repository.updateUserProfile(updatedUser)
+            }
             _isLoading.value = false
 
             result.onSuccess { user ->
                 _currentUser.value = user
                 onResult(true, null)
+            }.onFailure { exception ->
+                onResult(false, exception.message)
+            }
+        }
+    }
+
+    // Password Management
+    fun changePassword(currentPassword: String, newPassword: String, onResult: (Boolean, String?) -> Unit) {
+        val userId = _currentUser.value?.id
+        if (userId == null) {
+            onResult(false, "User not logged in")
+            return
+        }
+
+        viewModelScope.launch {
+            _isLoading.value = true
+            val result = repository.changePassword(userId, currentPassword, newPassword)
+            _isLoading.value = false
+
+            result.onSuccess {
+                onResult(true, "Password changed successfully")
             }.onFailure { exception ->
                 onResult(false, exception.message)
             }
@@ -181,23 +210,40 @@ class BookNestViewModel(private val repository: BookNestRepository) : ViewModel(
         return repository.isInWishlist(userId, bookId)
     }
 
-    // Book Management
-    fun addBook(book: Book, onResult: (Boolean, String?) -> Unit) {
+    // Book Management with Image Support
+    fun addBookWithImage(book: Book, imageUri: Uri?, onResult: (Boolean, String?) -> Unit) {
+        val currentUser = _currentUser.value
+        if (currentUser == null) {
+            onResult(false, "User not logged in")
+            return
+        }
+
         viewModelScope.launch {
-            val result = repository.addBook(book)
+            _isLoading.value = true
+            // Set the current user as the seller
+            val bookWithSeller = book.copy(seller = currentUser)
+            val result = repository.addBookWithImage(bookWithSeller, imageUri)
+            _isLoading.value = false
+
             result.onSuccess {
-                onResult(true, null)
+                onResult(true, "Book listed successfully!")
             }.onFailure { exception ->
                 onResult(false, exception.message)
             }
         }
     }
 
-    suspend fun getBookById(bookId: String): Book? {
-        return repository.getBookById(bookId)
+    // Image utility methods
+    fun getImageUri(imagePath: String): Uri? {
+        return repository.getImageUri(imagePath)
     }
 
-    fun getBooksByCategory(category: String) = repository.getBooksByCategory(category)
+    // Theme Management
+    fun toggleDarkMode(isDarkMode: Boolean) {
+        viewModelScope.launch {
+            repository.userPreferences.setDarkMode(isDarkMode)
+        }
+    }
 
     fun clearError() {
         _errorMessage.value = null

@@ -1,5 +1,6 @@
 package com.booknest.app.ui.sell
 
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,19 +16,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.booknest.app.data.BookCondition
 import com.booknest.app.data.Book
 import com.booknest.app.data.User
+import com.booknest.app.ui.utils.ImagePickerBottomSheet
 import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SellBookScreen(
     onBackClick: () -> Unit,
-    onSubmit: (Book) -> Unit
+    onSubmit: (Book, Uri?) -> Unit // Added Uri parameter for book image
 ) {
     var title by remember { mutableStateOf("") }
     var author by remember { mutableStateOf("") }
@@ -35,8 +39,13 @@ fun SellBookScreen(
     var category by remember { mutableStateOf("") }
     var condition by remember { mutableStateOf(BookCondition.GOOD) }
     var description by remember { mutableStateOf("") }
-    var hasImage by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
+    var showImagePicker by remember { mutableStateOf(false) }
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+
+    // Add state for selling options
+    var allowNegotiations by remember { mutableStateOf(true) }
+    var homeDelivery by remember { mutableStateOf(false) }
 
     val categories = listOf(
         "Academic", "Fiction", "Non-Fiction", "Science", "Technology",
@@ -45,6 +54,15 @@ fun SellBookScreen(
 
     var expanded by remember { mutableStateOf(false) }
     var conditionExpanded by remember { mutableStateOf(false) }
+
+    // Validation
+    val isFormValid = title.isNotBlank() &&
+                     author.isNotBlank() &&
+                     price.isNotBlank() &&
+                     category.isNotBlank() &&
+                     description.isNotBlank() &&
+                     price.toDoubleOrNull() != null &&
+                     price.toDouble() > 0
 
     Column(
         modifier = Modifier
@@ -70,77 +88,80 @@ fun SellBookScreen(
         )
 
         LazyColumn(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                // Upload Book Cover Section
+                // Book Image Upload Section
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                     )
                 ) {
                     Column(
-                        modifier = Modifier.padding(16.dp),
+                        modifier = Modifier.padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(
-                            text = "Book Cover",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Medium
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
                         // Image Upload Area
                         Box(
                             modifier = Modifier
                                 .size(120.dp, 160.dp)
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(12.dp))
                                 .border(
                                     2.dp,
-                                    if (hasImage) MaterialTheme.colorScheme.primary
+                                    if (selectedImageUri != null) MaterialTheme.colorScheme.primary
                                     else MaterialTheme.colorScheme.outline,
-                                    RoundedCornerShape(8.dp)
+                                    RoundedCornerShape(12.dp)
                                 )
+                                .clickable { showImagePicker = true }
                                 .background(
-                                    if (hasImage) MaterialTheme.colorScheme.primaryContainer
-                                    else Color.Transparent
-                                )
-                                .clickable { hasImage = true },
+                                    if (selectedImageUri != null) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                    else MaterialTheme.colorScheme.surface
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (hasImage) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally
+                            if (selectedImageUri != null) {
+                                AsyncImage(
+                                    model = selectedImageUri,
+                                    contentDescription = "Selected book image",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+
+                                // Edit overlay - fixed to be clickable
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(8.dp)
+                                        .size(24.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.8f))
+                                        .clickable { showImagePicker = true }, // Added clickable
+                                    contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
-                                        Icons.Default.CheckCircle,
-                                        contentDescription = "Image uploaded",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(32.dp)
-                                    )
-                                    Text(
-                                        text = "Image Added",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.primary
+                                        Icons.Default.Edit,
+                                        contentDescription = "Edit image",
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.onPrimary
                                     )
                                 }
                             } else {
                                 Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Icon(
-                                        Icons.Default.CloudUpload,
-                                        contentDescription = "Upload image",
+                                        Icons.Default.CameraAlt,
+                                        contentDescription = "Add photo",
                                         modifier = Modifier.size(32.dp),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Text(
-                                        text = "Tap to upload",
+                                        text = "Add Photo",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -148,12 +169,15 @@ fun SellBookScreen(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         Text(
-                            text = "Clear photo of front cover recommended",
+                            text = if (selectedImageUri != null) "Book photo added • Tap to change"
+                                  else "Add a photo of your book cover",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (selectedImageUri != null) MaterialTheme.colorScheme.primary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = if (selectedImageUri != null) FontWeight.Medium else FontWeight.Normal
                         )
                     }
                 }
@@ -314,7 +338,7 @@ fun SellBookScreen(
             }
 
             item {
-                // Additional Options
+                // Additional Options - Fixed switches
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -349,8 +373,8 @@ fun SellBookScreen(
                                 )
                             }
                             Switch(
-                                checked = true,
-                                onCheckedChange = { }
+                                checked = allowNegotiations,
+                                onCheckedChange = { allowNegotiations = it } // Fixed
                             )
                         }
 
@@ -371,82 +395,85 @@ fun SellBookScreen(
                                 )
                             }
                             Switch(
-                                checked = false,
-                                onCheckedChange = { }
+                                checked = homeDelivery,
+                                onCheckedChange = { homeDelivery = it } // Fixed
                             )
                         }
                     }
                 }
             }
-        }
 
-        // Submit Button
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+            item {
+                // Submit Button - Enhanced feedback
                 Button(
                     onClick = {
-                        isLoading = true
-                        // Create Book object from form data
-                        val book = Book(
-                            id = UUID.randomUUID().toString(),
-                            title = title,
-                            author = author,
-                            coverImageUrl = "", // TODO: Handle image upload
-                            price = price.toDoubleOrNull() ?: 0.0,
-                            rentalPrice = (price.toDoubleOrNull() ?: 0.0) * 0.1, // 10% of selling price
-                            condition = condition,
-                            category = category,
-                            description = description,
-                            seller = User(
-                                id = "current_user_id", // TODO: Get from current user
-                                name = "Current User",
-                                email = "user@example.com",
-                                profileImageUrl = "",
-                                rating = 4.5f,
-                                location = "Unknown"
-                            ),
-                            rating = 0f,
-                            isAvailableForRent = true,
-                            isAvailableForPurchase = true,
-                            isNewBook = condition == BookCondition.NEW
-                        )
-                        onSubmit(book)
+                        if (isFormValid) {
+                            isLoading = true
+                            val book = Book(
+                                id = UUID.randomUUID().toString(),
+                                title = title,
+                                author = author,
+                                coverImageUrl = "", // Will be set after image upload
+                                price = price.toDouble(),
+                                rentalPrice = price.toDouble() * 0.1, // 10% of sell price
+                                condition = condition,
+                                category = category,
+                                description = description,
+                                seller = User("", "", "", "", 0f, ""), // Dummy user, will be set by repository
+                                rating = 0f,
+                                isAvailableForRent = true,
+                                isAvailableForPurchase = true,
+                                isNewBook = condition == BookCondition.NEW
+                            )
+                            onSubmit(book, selectedImageUri)
+                        }
                     },
+                    enabled = isFormValid && !isLoading,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    enabled = title.isNotBlank() && author.isNotBlank() &&
-                             price.isNotBlank() && category.isNotBlank() && !isLoading
+                    shape = RoundedCornerShape(16.dp)
                 ) {
                     if (isLoading) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
                             color = MaterialTheme.colorScheme.onPrimary
                         )
                     } else {
-                        Icon(Icons.Default.Upload, contentDescription = null)
+                        Icon(
+                            Icons.Default.Sell,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("List Your Book")
+                        Text(
+                            "List Book for Sale",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
-
-                Text(
-                    text = "By listing, you agree to our selling terms and conditions",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
+
+            item {
+                Spacer(modifier = Modifier.height(80.dp)) // Bottom navigation space
+            }
+        }
+    }
+
+    // Image Picker Bottom Sheet - Fixed structure
+    if (showImagePicker) {
+        ModalBottomSheet(
+            onDismissRequest = { showImagePicker = false }
+        ) {
+            ImagePickerBottomSheet(
+                onImageSelected = { uri ->
+                    selectedImageUri = uri
+                    showImagePicker = false // Close the bottom sheet
+                },
+                onDismiss = { showImagePicker = false }
+            )
         }
     }
 }

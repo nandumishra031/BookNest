@@ -1,17 +1,23 @@
 package com.booknest.app.repository
 
+import android.content.Context
+import android.net.Uri
 import com.booknest.app.database.BookNestDatabase
 import com.booknest.app.database.entities.*
 import com.booknest.app.data.*
 import com.booknest.app.datastore.UserPreferences
+import com.booknest.app.utils.PasswordUtils
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
+import java.io.File
+import java.io.FileOutputStream
 import java.util.UUID
 
 class BookNestRepository(
     private val database: BookNestDatabase,
-    val userPreferences: UserPreferences
+    val userPreferences: UserPreferences,
+    private val context: Context // Add context for file operations
 ) {
 
     // User operations
@@ -19,22 +25,27 @@ class BookNestRepository(
         return try {
             val userEntity = database.userDao().getUserByEmail(email)
             if (userEntity != null) {
-                // Update login state in database
-                database.userDao().logoutAllUsers()
-                database.userDao().loginUser(userEntity.id)
+                // Verify password
+                if (PasswordUtils.verifyPassword(password, userEntity.passwordHash)) {
+                    // Update login state in database
+                    database.userDao().logoutAllUsers()
+                    database.userDao().loginUser(userEntity.id)
 
-                // Save login state in preferences
-                userPreferences.saveLoginState(
-                    isLoggedIn = true,
-                    userId = userEntity.id,
-                    userName = userEntity.name,
-                    userEmail = userEntity.email,
-                    profileImage = userEntity.profileImageUrl
-                )
+                    // Save login state in preferences
+                    userPreferences.saveLoginState(
+                        isLoggedIn = true,
+                        userId = userEntity.id,
+                        userName = userEntity.name,
+                        userEmail = userEntity.email,
+                        profileImage = userEntity.profileImageUrl
+                    )
 
-                Result.success(userEntity.toUser())
+                    Result.success(userEntity.toUser())
+                } else {
+                    Result.failure(Exception("Invalid email or password"))
+                }
             } else {
-                Result.failure(Exception("User not found"))
+                Result.failure(Exception("Invalid email or password"))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -45,30 +56,67 @@ class BookNestRepository(
         return try {
             val existingUser = database.userDao().getUserByEmail(email)
             if (existingUser != null) {
-                Result.failure(Exception("User already exists"))
+                Result.failure(Exception("An account with this email already exists"))
             } else {
-                val userId = UUID.randomUUID().toString()
-                val userEntity = UserEntity(
-                    id = userId,
-                    name = name,
-                    email = email,
-                    profileImageUrl = "",
-                    rating = 5.0f,
-                    location = "Mumbai, India",
-                    isLoggedIn = true
-                )
+                // Validate password strength
+                val passwordValidation = PasswordUtils.validatePasswordStrength(password)
+                if (!passwordValidation.isValid) {
+                    Result.failure(Exception(passwordValidation.errors.first()))
+                } else {
+                    val userId = UUID.randomUUID().toString()
+                    val passwordHash = PasswordUtils.hashPassword(password)
 
-                database.userDao().insertUser(userEntity)
+                    val userEntity = UserEntity(
+                        id = userId,
+                        name = name,
+                        email = email,
+                        passwordHash = passwordHash,
+                        profileImageUrl = "",
+                        rating = 5.0f,
+                        location = "Mumbai, India",
+                        isLoggedIn = true
+                    )
 
-                // Save login state in preferences
-                userPreferences.saveLoginState(
-                    isLoggedIn = true,
-                    userId = userId,
-                    userName = name,
-                    userEmail = email
-                )
+                    database.userDao().insertUser(userEntity)
 
-                Result.success(userEntity.toUser())
+                    // Save login state in preferences
+                    userPreferences.saveLoginState(
+                        isLoggedIn = true,
+                        userId = userId,
+                        userName = name,
+                        userEmail = email
+                    )
+
+                    Result.success(userEntity.toUser())
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun changePassword(userId: String, currentPassword: String, newPassword: String): Result<Unit> {
+        return try {
+            val userEntity = database.userDao().getUserById(userId)
+            if (userEntity != null) {
+                // Verify current password
+                if (PasswordUtils.verifyPassword(currentPassword, userEntity.passwordHash)) {
+                    // Validate new password strength
+                    val passwordValidation = PasswordUtils.validatePasswordStrength(newPassword)
+                    if (!passwordValidation.isValid) {
+                        Result.failure(Exception(passwordValidation.errors.first()))
+                    } else {
+                        // Hash new password and update
+                        val newPasswordHash = PasswordUtils.hashPassword(newPassword)
+                        val updatedUser = userEntity.copy(passwordHash = newPasswordHash)
+                        database.userDao().updateUser(updatedUser)
+                        Result.success(Unit)
+                    }
+                } else {
+                    Result.failure(Exception("Current password is incorrect"))
+                }
+            } else {
+                Result.failure(Exception("User not found"))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -259,6 +307,161 @@ class BookNestRepository(
     suspend fun setFirstTimeLaunchCompleted() {
         userPreferences.setFirstTimeLaunch(false)
     }
+
+    // Image handling methods
+    suspend fun saveUserProfileImage(userId: String, imageUri: Uri): Result<String> {
+        return try {
+            val savedImagePath = saveImageToInternalStorage(imageUri, "profile_$userId")
+            if (savedImagePath != null) {
+                // Update user profile image path in database
+                database.userDao().updateUserProfileImage(userId, savedImagePath)
+                Result.success(savedImagePath)
+            } else {
+                Result.failure(Exception("Failed to save image"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun saveBookImage(bookId: String, imageUri: Uri): Result<String> {
+        return try {
+            val savedImagePath = saveImageToInternalStorage(imageUri, "book_$bookId")
+            if (savedImagePath != null) {
+                // Update book cover image path in database
+                database.bookDao().updateBookCoverImage(bookId, savedImagePath)
+                Result.success(savedImagePath)
+            } else {
+                Result.failure(Exception("Failed to save image"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun saveImageToInternalStorage(sourceUri: Uri, fileName: String): String? {
+        return try {
+            val imagesDir = File(context.filesDir, "images")
+            if (!imagesDir.exists()) {
+                imagesDir.mkdirs()
+            }
+
+            val destinationFile = File(imagesDir, "${fileName}.jpg")
+
+            context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
+                FileOutputStream(destinationFile).use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+
+            destinationFile.absolutePath
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    fun getImageUri(imagePath: String): Uri? {
+        return try {
+            val file = File(imagePath)
+            if (file.exists()) {
+                Uri.fromFile(file)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // Update profile with image
+    suspend fun updateUserProfileWithImage(updatedUser: User, imageUri: Uri?): Result<User> {
+        return try {
+            var finalUser = updatedUser
+
+            // Save image if provided
+            if (imageUri != null) {
+                val imageResult = saveUserProfileImage(updatedUser.id, imageUri)
+                if (imageResult.isSuccess) {
+                    finalUser = updatedUser.copy(profileImageUrl = imageResult.getOrNull() ?: "")
+                }
+            }
+
+            // Get the existing user to preserve the password hash
+            val existingUserEntity = database.userDao().getUserById(finalUser.id)
+            if (existingUserEntity == null) {
+                return Result.failure(Exception("User not found"))
+            }
+
+            // Update user in database while preserving the password hash
+            val userEntity = UserEntity(
+                id = finalUser.id,
+                name = finalUser.name,
+                email = finalUser.email,
+                passwordHash = existingUserEntity.passwordHash, // Preserve existing password hash
+                profileImageUrl = finalUser.profileImageUrl,
+                rating = finalUser.rating,
+                location = finalUser.location,
+                isLoggedIn = true
+            )
+
+            database.userDao().updateUser(userEntity)
+
+            // Update preferences
+            userPreferences.saveLoginState(
+                isLoggedIn = true,
+                userId = finalUser.id,
+                userName = finalUser.name,
+                userEmail = finalUser.email,
+                profileImage = finalUser.profileImageUrl
+            )
+
+            Result.success(finalUser)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // Add book with image
+    suspend fun addBookWithImage(book: Book, imageUri: Uri?): Result<Unit> {
+        return try {
+            var finalBook = book
+
+            // Save image if provided
+            if (imageUri != null) {
+                val imageResult = saveBookImage(book.id, imageUri)
+                if (imageResult.isSuccess) {
+                    finalBook = book.copy(coverImageUrl = imageResult.getOrNull() ?: "")
+                }
+            }
+
+            // Add book to database
+            val bookEntity = BookEntity(
+                id = finalBook.id,
+                title = finalBook.title,
+                author = finalBook.author,
+                coverImageUrl = finalBook.coverImageUrl,
+                price = finalBook.price,
+                rentalPrice = finalBook.rentalPrice,
+                condition = finalBook.condition.name,
+                category = finalBook.category,
+                description = finalBook.description,
+                sellerId = finalBook.seller.id,
+                rating = finalBook.rating,
+                isAvailableForRent = finalBook.isAvailableForRent,
+                isAvailableForPurchase = finalBook.isAvailableForPurchase,
+                isNewBook = finalBook.isNewBook,
+                sellerName = finalBook.seller.name,
+                sellerRating = finalBook.seller.rating,
+                sellerLocation = finalBook.seller.location
+            )
+
+            database.bookDao().insertBook(bookEntity)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
 
 // Extension functions to convert between entities and data classes
@@ -278,6 +481,7 @@ private fun User.toUserEntity(): UserEntity {
         id = id,
         name = name,
         email = email,
+        passwordHash = "", // This will be handled separately when updating passwords
         profileImageUrl = profileImageUrl,
         rating = rating,
         location = location,

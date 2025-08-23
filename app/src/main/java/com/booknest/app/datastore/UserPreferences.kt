@@ -18,6 +18,7 @@ class UserPreferences(private val context: Context) {
         private val USER_EMAIL = stringPreferencesKey("user_email")
         private val USER_PROFILE_IMAGE = stringPreferencesKey("user_profile_image")
         private val FIRST_TIME_LAUNCH = booleanPreferencesKey("first_time_launch")
+        private val IS_DARK_MODE = booleanPreferencesKey("is_dark_mode") // Add dark mode preference
     }
 
     val isLoggedIn: Flow<Boolean> = context.dataStore.data.map { preferences ->
@@ -42,6 +43,10 @@ class UserPreferences(private val context: Context) {
 
     val isFirstTimeLaunch: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[FIRST_TIME_LAUNCH] ?: true
+    }
+
+    val isDarkMode: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[IS_DARK_MODE] ?: false
     }
 
     suspend fun saveLoginState(
@@ -75,6 +80,12 @@ class UserPreferences(private val context: Context) {
     suspend fun setFirstTimeLaunch(isFirstTime: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[FIRST_TIME_LAUNCH] = isFirstTime
+        }
+    }
+
+    suspend fun setDarkMode(isDarkMode: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[IS_DARK_MODE] = isDarkMode
         }
     }
 

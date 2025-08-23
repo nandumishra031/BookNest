@@ -9,6 +9,7 @@ data class UserEntity(
     val id: String,
     val name: String,
     val email: String,
+    val passwordHash: String, // Store hashed password for security
     val profileImageUrl: String,
     val rating: Float,
     val location: String,

@@ -25,12 +25,14 @@ import coil.compose.AsyncImage
 import com.booknest.app.data.Book
 import com.booknest.app.data.WishlistManager
 import com.booknest.app.data.CartManager
+import com.booknest.app.data.User
 import com.booknest.app.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BookDetailsScreen(
     book: Book,
+    currentUser: User? = null, // Add current user parameter
     isInWishlist: Boolean = false,
     onBackClick: () -> Unit,
     onAddToCart: () -> Unit,
@@ -41,6 +43,9 @@ fun BookDetailsScreen(
     var selectedTab by remember { mutableStateOf(0) }
     var showStockDialog by remember { mutableStateOf(false) }
     var stockMessage by remember { mutableStateOf("") }
+
+    // Check if current user is the seller
+    val isOwnBook = currentUser?.id == book.seller.id
 
     Column(
         modifier = Modifier
@@ -236,69 +241,126 @@ fun BookDetailsScreen(
             }
 
             item {
-                // Action Buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    if (book.isNewBook) {
-                        Button(
-                            onClick = onAddToCart,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = BuyAccent
-                            )
+                // Action Buttons - Modified to prevent self-purchase
+                if (isOwnBook) {
+                    // Show message for own book
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Icon(Icons.Default.ShoppingCart, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Buy New")
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Column {
+                                Text(
+                                    text = "This is your listing",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "You cannot purchase your own book",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
-
-                    if (book.isAvailableForPurchase && !book.isNewBook) {
-                        OutlinedButton(
-                            onClick = onAddToCart,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.ShoppingBag, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Buy Used")
+                } else {
+                    // Normal action buttons for other users' books
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        if (book.isNewBook) {
+                            Button(
+                                onClick = {
+                                    val availableStock = CartManager.getAvailableStock(book)
+                                    if (availableStock > 0) {
+                                        onAddToCart()
+                                    } else {
+                                        stockMessage = "Sorry, this book is currently out of stock."
+                                        showStockDialog = true
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = BuyAccent
+                                ),
+                                enabled = CartManager.getAvailableStock(book) > 0
+                            ) {
+                                Icon(Icons.Default.ShoppingCart, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Buy New")
+                            }
                         }
-                    }
 
-                    if (book.isAvailableForRent) {
-                        Button(
-                            onClick = onRentClick,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = RentAccent
-                            )
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Rent")
+                        if (book.isAvailableForPurchase && !book.isNewBook) {
+                            OutlinedButton(
+                                onClick = {
+                                    val availableStock = CartManager.getAvailableStock(book)
+                                    if (availableStock > 0) {
+                                        onAddToCart()
+                                    } else {
+                                        stockMessage = "Sorry, this book is currently out of stock."
+                                        showStockDialog = true
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                enabled = CartManager.getAvailableStock(book) > 0
+                            ) {
+                                Icon(Icons.Default.ShoppingBag, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Buy Used")
+                            }
+                        }
+
+                        if (book.isAvailableForRent) {
+                            Button(
+                                onClick = onRentClick,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = RentAccent
+                                )
+                            ) {
+                                Icon(Icons.Default.Download, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Rent")
+                            }
                         }
                     }
                 }
             }
 
             item {
-                // Add to Wishlist
-                OutlinedButton(
-                    onClick = onAddToWishlist,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(
-                        if (isInWishlist) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        contentDescription = null,
-                        tint = if (isInWishlist) Color.Red else MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (isInWishlist) "Remove from Wishlist" else "Add to Wishlist")
+                // Add to Wishlist - Also disabled for own books
+                if (!isOwnBook) {
+                    OutlinedButton(
+                        onClick = onAddToWishlist,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(
+                            if (isInWishlist) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = null,
+                            tint = if (isInWishlist) Color.Red else MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (isInWishlist) "Remove from Wishlist" else "Add to Wishlist")
+                    }
                 }
             }
 

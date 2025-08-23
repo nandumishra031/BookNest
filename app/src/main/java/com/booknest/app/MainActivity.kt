@@ -33,26 +33,30 @@ class MainActivity : ComponentActivity() {
         // Initialize database and repository
         database = BookNestDatabase.getDatabase(this)
         userPreferences = UserPreferences(this)
-        repository = BookNestRepository(database, userPreferences)
+        repository = BookNestRepository(database, userPreferences, this)
 
         setContent {
-            BookNestTheme {
-                BookNestApp(repository)
+            // Create ViewModel
+            val viewModel: BookNestViewModel = viewModel(
+                factory = BookNestViewModelFactory(repository)
+            )
+
+            // Observe dark mode preference
+            val isDarkMode by viewModel.isDarkMode.collectAsState(initial = false)
+
+            BookNestTheme(darkTheme = isDarkMode) { // Use preference-based dark mode
+                BookNestApp(repository, viewModel)
             }
         }
     }
 }
 
 @Composable
-fun BookNestApp(repository: BookNestRepository) {
+fun BookNestApp(repository: BookNestRepository, viewModel: BookNestViewModel) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    // Initialize ViewModel with repository
-    val viewModel: BookNestViewModel = viewModel(
-        factory = BookNestViewModelFactory(repository)
-    )
 
     // Observe user login state to determine start destination
     val currentUser by viewModel.currentUser.collectAsState()
