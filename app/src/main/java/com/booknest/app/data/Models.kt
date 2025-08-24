@@ -46,3 +46,34 @@ data class OnboardingPage(
 enum class BottomNavItem {
     HOME, MY_BOOKS, SELL, RENTALS, PROFILE
 }
+
+data class Order(
+    val id: String,
+    val userId: String,
+    val items: List<OrderItem>,
+    val totalAmount: Double,
+    val orderDate: Long,
+    val status: OrderStatus = OrderStatus.CONFIRMED,
+    val paymentMethod: String = "To be integrated", // Placeholder for future payment gateway
+    val deliveryAddress: String = ""
+)
+
+data class OrderItem(
+    val book: Book,
+    val quantity: Int,
+    val isRental: Boolean,
+    val rentalDays: Int = 0,
+    val itemPrice: Double,
+    val rentalStartDate: Long? = null,
+    val rentalEndDate: Long? = null
+)
+
+enum class OrderStatus {
+    PENDING,
+    CONFIRMED,
+    PROCESSING,
+    SHIPPED,
+    DELIVERED,
+    COMPLETED,
+    CANCELLED
+}

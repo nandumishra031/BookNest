@@ -98,5 +98,22 @@ data class OrderItemEntity(
     val bookId: String,
     val quantity: Int,
     val price: Double,
+    val isRental: Boolean = false,
+    val rentalDays: Int = 0,
+    val rentalStartDate: Long? = null,
+    val rentalEndDate: Long? = null
+)
+
+@Entity(tableName = "user_books")
+data class UserBookEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val userId: String,
+    val bookId: String,
+    val purchaseDate: Long,
+    val orderId: String,
+    val quantity: Int = 1,
+    val purchasePrice: Double,
+    val accessExpiryDate: Long? = null, // For rentals, null for purchases
     val isRental: Boolean = false
 )

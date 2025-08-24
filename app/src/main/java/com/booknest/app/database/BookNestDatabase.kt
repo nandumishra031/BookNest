@@ -16,9 +16,10 @@ import com.booknest.app.database.entities.*
         WishlistItemEntity::class,
         RentalEntity::class,
         OrderEntity::class,
-        OrderItemEntity::class
+        OrderItemEntity::class,
+        UserBookEntity::class
     ],
-    version = 1,
+    version = 2, // Increment version due to schema change
     exportSchema = false
 )
 abstract class BookNestDatabase : RoomDatabase() {
@@ -29,6 +30,7 @@ abstract class BookNestDatabase : RoomDatabase() {
     abstract fun wishlistDao(): WishlistDao
     abstract fun rentalDao(): RentalDao
     abstract fun orderDao(): OrderDao
+    abstract fun userBooksDao(): UserBooksDao
 
     companion object {
         @Volatile

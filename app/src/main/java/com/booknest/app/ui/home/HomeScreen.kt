@@ -21,24 +21,29 @@ import com.booknest.app.data.Book
 import com.booknest.app.data.BookCondition
 import com.booknest.app.data.User
 import com.booknest.app.ui.theme.*
+import com.booknest.app.viewmodel.BookNestViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    books: List<Book> = emptyList(),
-    trendingBooks: List<Book> = emptyList(),
+    books: List<Book>,
+    trendingBooks: List<Book>,
+    viewModel: BookNestViewModel,
     onBookClick: (Book) -> Unit,
-    onNotificationClick: () -> Unit,
-    onSellClick: () -> Unit = {}
+    onCategoryClick: (String) -> Unit
 ) {
     // Search state
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
 
-    // Use provided data or fallback to sample data if empty
-    val displayBooks = books.ifEmpty { getSampleBooks() }
+    // Observe initialization state
+    val isInitialized by viewModel.isInitialized.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+
+    // Only use database data - no fallback to hardcoded sample data
+    val displayBooks = books
     val displayTrendingBooks = trendingBooks.ifEmpty {
-        // Dynamic trending books: mix of different categories
+        // Dynamic trending books: mix of different categories from database
         displayBooks.shuffled().take(6)
     }
 
@@ -116,7 +121,7 @@ fun HomeScreen(
             )
 
             if (!isSearchActive) {
-                IconButton(onClick = onNotificationClick) {
+                IconButton(onClick = { onNotificationClick() }) {
                     Badge(
                         modifier = Modifier.offset(x = (-8).dp, y = 8.dp)
                     ) {
@@ -288,7 +293,7 @@ fun HomeScreen(
                             icon = Icons.Default.AttachMoney,
                             color = SellAccent,
                             modifier = Modifier.weight(1f),
-                            onClick = onSellClick
+                            onClick = { onSellClick() }
                         )
                         QuickActionCard(
                             title = "Rent",
@@ -858,146 +863,63 @@ private fun SearchResultBookCard(
     }
 }
 
-// Sample data function
+// Helper functions for HomeScreen actions
+private fun onNotificationClick() {
+    // Placeholder for notification click action
+}
+
+private fun onSellClick() {
+    // Placeholder for sell click action - this would navigate to sell screen
+}
+
+// Sample data function (now only used as reference, not for display)
 fun getSampleBooks(): List<Book> {
     return listOf(
         Book(
             id = "1",
-            title = "The Great Gatsby",
-            author = "F. Scott Fitzgerald",
+            title = "The Psychology of Money",
+            author = "Morgan Housel",
             coverImageUrl = "",
-            price = 299.0,
-            rentalPrice = 50.0,
-            condition = BookCondition.GOOD,
-            category = "Classic Literature",
-            description = "A classic American novel",
+            price = 399.0,
+            rentalPrice = 99.0,
+            condition = BookCondition.NEW,
+            category = "Finance",
+            description = "Timeless lessons on wealth, greed, and happiness",
             seller = User(
-                id = "user1",
+                id = "seller1",
                 name = "John Doe",
                 email = "john@example.com",
                 profileImageUrl = "",
                 rating = 4.5f,
-                location = "Delhi"
-            ),
-            rating = 4.2f,
-            isAvailableForRent = true,
-            isAvailableForPurchase = true,
-            isNewBook = false
-        ),
-        Book(
-            id = "2",
-            title = "Data Structures and Algorithms",
-            author = "Thomas Cormen",
-            coverImageUrl = "",
-            price = 899.0,
-            rentalPrice = 150.0,
-            condition = BookCondition.LIKE_NEW,
-            category = "Academic",
-            description = "Comprehensive guide to algorithms",
-            seller = User(
-                id = "user2",
-                name = "Jane Smith",
-                email = "jane@example.com",
-                profileImageUrl = "",
-                rating = 4.8f,
                 location = "Mumbai"
             ),
-            rating = 4.7f,
-            isAvailableForRent = true,
-            isAvailableForPurchase = true,
-            isNewBook = false
-        ),
-        Book(
-            id = "3",
-            title = "Harry Potter and the Philosopher's Stone",
-            author = "J.K. Rowling",
-            coverImageUrl = "",
-            price = 399.0,
-            rentalPrice = 75.0,
-            condition = BookCondition.NEW,
-            category = "Fantasy",
-            description = "First book in the Harry Potter series",
-            seller = User(
-                id = "user3",
-                name = "Alice Johnson",
-                email = "alice@example.com",
-                profileImageUrl = "",
-                rating = 4.3f,
-                location = "Bangalore"
-            ),
-            rating = 4.9f,
+            rating = 4.6f,
             isAvailableForRent = true,
             isAvailableForPurchase = true,
             isNewBook = true
         ),
         Book(
-            id = "4",
-            title = "Operating System Concepts",
-            author = "Abraham Silberschatz",
+            id = "2",
+            title = "Data Structures and Algorithms",
+            author = "Narasimha Karumanchi",
             coverImageUrl = "",
-            price = 1299.0,
-            rentalPrice = 200.0,
+            price = 650.0,
+            rentalPrice = 150.0,
             condition = BookCondition.GOOD,
             category = "Academic",
-            description = "Comprehensive guide to operating systems",
+            description = "Complete guide to DSA",
             seller = User(
-                id = "user4",
-                name = "Mike Johnson",
-                email = "mike@example.com",
+                id = "seller2",
+                name = "Jane Smith",
+                email = "jane@example.com",
                 profileImageUrl = "",
-                rating = 4.6f,
-                location = "Chennai"
-            ),
-            rating = 4.5f,
-            isAvailableForRent = true,
-            isAvailableForPurchase = true,
-            isNewBook = false
-        ),
-        Book(
-            id = "5",
-            title = "Psychology of Money",
-            author = "Morgan Housel",
-            coverImageUrl = "",
-            price = 450.0,
-            rentalPrice = 80.0,
-            condition = BookCondition.LIKE_NEW,
-            category = "Finance",
-            description = "Timeless lessons on wealth, greed, and happiness",
-            seller = User(
-                id = "user5",
-                name = "Sarah Wilson",
-                email = "sarah@example.com",
-                profileImageUrl = "",
-                rating = 4.7f,
+                rating = 4.8f,
                 location = "Pune"
             ),
             rating = 4.8f,
             isAvailableForRent = true,
             isAvailableForPurchase = true,
             isNewBook = false
-        ),
-        Book(
-            id = "6",
-            title = "Atomic Habits",
-            author = "James Clear",
-            coverImageUrl = "",
-            price = 399.0,
-            rentalPrice = 70.0,
-            condition = BookCondition.NEW,
-            category = "Self Help",
-            description = "An easy and proven way to build good habits and break bad ones",
-            seller = User(
-                id = "user6",
-                name = "David Brown",
-                email = "david@example.com",
-                profileImageUrl = "",
-                rating = 4.4f,
-                location = "Hyderabad"
-            ),
-            rating = 4.9f,
-            isAvailableForRent = true,
-            isAvailableForPurchase = true,
-            isNewBook = true
         )
     )
 }

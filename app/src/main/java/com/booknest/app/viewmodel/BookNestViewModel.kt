@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.booknest.app.data.Book
 import com.booknest.app.data.CartItem
+import com.booknest.app.data.Order
 import com.booknest.app.data.User
 import com.booknest.app.repository.BookNestRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,25 +40,50 @@ class BookNestViewModel(private val repository: BookNestRepository) : ViewModel(
     private val _wishlistItems = MutableStateFlow<List<Book>>(emptyList())
     val wishlistItems: StateFlow<List<Book>> = _wishlistItems.asStateFlow()
 
-    init {
-        checkLoginState()
-        initializeApp()
-    }
+    // Orders
+    private val _orders = MutableStateFlow<List<Order>>(emptyList())
+    val orders: StateFlow<List<Order>> = _orders.asStateFlow()
 
-    private fun checkLoginState() {
-        viewModelScope.launch {
-            _currentUser.value = repository.getCurrentUser()
-            _currentUser.value?.let { user ->
-                loadUserData(user.id)
-            }
-        }
+    private val _orderSuccess = MutableStateFlow<Order?>(null)
+    val orderSuccess: StateFlow<Order?> = _orderSuccess.asStateFlow()
+
+    // Rentals
+    private val _activeRentals = MutableStateFlow<List<com.booknest.app.ui.rentals.RentalItem>>(emptyList())
+    val activeRentals: StateFlow<List<com.booknest.app.ui.rentals.RentalItem>> = _activeRentals.asStateFlow()
+
+    private val _pastRentals = MutableStateFlow<List<com.booknest.app.ui.rentals.RentalItem>>(emptyList())
+    val pastRentals: StateFlow<List<com.booknest.app.ui.rentals.RentalItem>> = _pastRentals.asStateFlow()
+
+    // User Books - NEW PROPERTIES FOR PURCHASED BOOKS
+    private val _userPurchasedBooks = MutableStateFlow<List<Book>>(emptyList())
+    val userPurchasedBooks: StateFlow<List<Book>> = _userPurchasedBooks.asStateFlow()
+
+    private val _userRentedBooks = MutableStateFlow<List<Book>>(emptyList())
+    val userRentedBooks: StateFlow<List<Book>> = _userRentedBooks.asStateFlow()
+
+    private val _isInitialized = MutableStateFlow(false)
+    val isInitialized: StateFlow<Boolean> = _isInitialized.asStateFlow()
+
+    init {
+        initializeApp()
     }
 
     private fun initializeApp() {
         viewModelScope.launch {
-            if (repository.isFirstTimeLaunch()) {
+            _isLoading.value = true
+            try {
+                // Always ensure sample data is initialized
                 repository.initializeSampleData()
-                repository.setFirstTimeLaunchCompleted()
+
+                // Check login state after initialization
+                _currentUser.value = repository.getCurrentUser()
+                _currentUser.value?.let { user ->
+                    loadUserData(user.id)
+                }
+
+                _isInitialized.value = true
+            } finally {
+                _isLoading.value = false
             }
         }
     }
@@ -74,6 +100,41 @@ class BookNestViewModel(private val repository: BookNestRepository) : ViewModel(
             // Load wishlist items
             repository.getWishlistItems(userId).collect { items ->
                 _wishlistItems.value = items
+            }
+        }
+
+        viewModelScope.launch {
+            // Load orders
+            repository.getUserOrders(userId).collect { orders ->
+                _orders.value = orders
+            }
+        }
+
+        viewModelScope.launch {
+            // Load active rentals
+            repository.getActiveRentals(userId).collect { rentals ->
+                _activeRentals.value = rentals
+            }
+        }
+
+        viewModelScope.launch {
+            // Load past rentals
+            repository.getPastRentals(userId).collect { rentals ->
+                _pastRentals.value = rentals
+            }
+        }
+
+        viewModelScope.launch {
+            // Load purchased books
+            repository.getUserPurchasedBooks(userId).collect { books ->
+                _userPurchasedBooks.value = books
+            }
+        }
+
+        viewModelScope.launch {
+            // Load rented books
+            repository.getUserRentedBooks(userId).collect { books ->
+                _userRentedBooks.value = books
             }
         }
     }
@@ -117,6 +178,11 @@ class BookNestViewModel(private val repository: BookNestRepository) : ViewModel(
             _currentUser.value = null
             _cartItems.value = emptyList()
             _wishlistItems.value = emptyList()
+            _orders.value = emptyList()
+            _activeRentals.value = emptyList()
+            _pastRentals.value = emptyList()
+            _userPurchasedBooks.value = emptyList()
+            _userRentedBooks.value = emptyList()
         }
     }
 
@@ -163,7 +229,11 @@ class BookNestViewModel(private val repository: BookNestRepository) : ViewModel(
 
     // Cart Management
     fun addToCart(book: Book, quantity: Int = 1, isRental: Boolean = false, rentalDays: Int = 0) {
-        val userId = _currentUser.value?.id ?: return
+        val userId = _currentUser.value?.id
+        if (userId == null) {
+            // User not logged in - this is likely the issue
+            return
+        }
         viewModelScope.launch {
             repository.addToCart(userId, book, quantity, isRental, rentalDays)
         }
@@ -192,14 +262,22 @@ class BookNestViewModel(private val repository: BookNestRepository) : ViewModel(
 
     // Wishlist Management
     fun addToWishlist(book: Book) {
-        val userId = _currentUser.value?.id ?: return
+        val userId = _currentUser.value?.id
+        if (userId == null) {
+            // User not logged in - this is likely the issue
+            return
+        }
         viewModelScope.launch {
             repository.addToWishlist(userId, book)
         }
     }
 
     fun removeFromWishlist(bookId: String) {
-        val userId = _currentUser.value?.id ?: return
+        val userId = _currentUser.value?.id
+        if (userId == null) {
+            // User not logged in - this is likely the issue
+            return
+        }
         viewModelScope.launch {
             repository.removeFromWishlist(userId, bookId)
         }
@@ -236,6 +314,110 @@ class BookNestViewModel(private val repository: BookNestRepository) : ViewModel(
     // Image utility methods
     fun getImageUri(imagePath: String): Uri? {
         return repository.getImageUri(imagePath)
+    }
+
+    // Order Management
+    fun placeOrder(deliveryAddress: String = "", onResult: (Boolean, String?, Order?) -> Unit) {
+        val userId = _currentUser.value?.id
+        if (userId == null) {
+            onResult(false, "User not logged in", null)
+            return
+        }
+
+        viewModelScope.launch {
+            _isLoading.value = true
+            val result = repository.createOrderFromCart(userId, deliveryAddress)
+            _isLoading.value = false
+
+            result.onSuccess { order ->
+                _orderSuccess.value = order
+                onResult(true, "Order placed successfully!", order)
+            }.onFailure { exception ->
+                onResult(false, exception.message, null)
+            }
+        }
+    }
+
+    fun buyBookDirectly(book: Book, quantity: Int = 1, deliveryAddress: String = "", onResult: (Boolean, String?, Order?) -> Unit) {
+        val userId = _currentUser.value?.id
+        if (userId == null) {
+            onResult(false, "User not logged in", null)
+            return
+        }
+
+        viewModelScope.launch {
+            _isLoading.value = true
+            // Add to cart temporarily and then create order
+            val addToCartResult = repository.addToCart(userId, book, quantity, isRental = false)
+
+            if (addToCartResult.isSuccess) {
+                val orderResult = repository.createOrderFromCart(userId, deliveryAddress)
+
+                orderResult.onSuccess { order ->
+                    _orderSuccess.value = order
+                    _isLoading.value = false
+                    onResult(true, "Purchase successful!", order)
+                }.onFailure { exception ->
+                    _isLoading.value = false
+                    onResult(false, exception.message, null)
+                }
+            } else {
+                _isLoading.value = false
+                onResult(false, "Failed to process purchase", null)
+            }
+        }
+    }
+
+    fun rentBookDirectly(book: Book, rentalDays: Int, quantity: Int = 1, deliveryAddress: String = "", onResult: (Boolean, String?, Order?) -> Unit) {
+        val userId = _currentUser.value?.id
+        if (userId == null) {
+            onResult(false, "User not logged in", null)
+            return
+        }
+
+        viewModelScope.launch {
+            _isLoading.value = true
+            // Add to cart temporarily as rental and then create order
+            val addToCartResult = repository.addToCart(userId, book, quantity, isRental = true, rentalDays = rentalDays)
+
+            if (addToCartResult.isSuccess) {
+                val orderResult = repository.createOrderFromCart(userId, deliveryAddress)
+
+                orderResult.onSuccess { order ->
+                    _orderSuccess.value = order
+                    _isLoading.value = false
+                    onResult(true, "Rental booking successful!", order)
+                }.onFailure { exception ->
+                    _isLoading.value = false
+                    onResult(false, exception.message, null)
+                }
+            } else {
+                _isLoading.value = false
+                onResult(false, "Failed to process rental", null)
+            }
+        }
+    }
+
+    fun getOrderById(orderId: String, onResult: (Order?) -> Unit) {
+        viewModelScope.launch {
+            val order = repository.getOrderById(orderId)
+            onResult(order)
+        }
+    }
+
+    fun clearOrderSuccess() {
+        _orderSuccess.value = null
+    }
+
+    // Calculate total for cart items
+    fun calculateCartTotal(): Double {
+        return _cartItems.value.sumOf { cartItem ->
+            if (cartItem.isRental) {
+                cartItem.book.rentalPrice * cartItem.quantity * cartItem.rentalDays
+            } else {
+                cartItem.book.price * cartItem.quantity
+            }
+        }
     }
 
     // Theme Management

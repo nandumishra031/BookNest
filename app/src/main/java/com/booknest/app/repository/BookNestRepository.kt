@@ -201,11 +201,13 @@ class BookNestRepository(
 
     suspend fun addToCart(userId: String, book: Book, quantity: Int, isRental: Boolean = false, rentalDays: Int = 0): Result<Unit> {
         return try {
-            val existingItem = database.cartDao().getCartItem(userId, book.id)
+            val existingItem = database.cartDao().getCartItem(userId, book.id, isRental)
             if (existingItem != null) {
+                // Update quantity if exact same type (rental status) exists
                 val updatedItem = existingItem.copy(quantity = existingItem.quantity + quantity)
                 database.cartDao().updateCartItem(updatedItem)
             } else {
+                // Create new item if no existing item with same rental status
                 val cartItem = CartItemEntity(
                     bookId = book.id,
                     userId = userId,
@@ -223,8 +225,11 @@ class BookNestRepository(
 
     suspend fun updateCartItemQuantity(userId: String, bookId: String, newQuantity: Int): Result<Unit> {
         return try {
-            val cartItem = database.cartDao().getCartItem(userId, bookId)
-            if (cartItem != null) {
+            // Get all cart items for this book (both rental and purchase)
+            val cartItems = database.cartDao().getAllCartItemsForBook(userId, bookId)
+            if (cartItems.isNotEmpty()) {
+                // For now, update the first item - you might want to specify which one to update
+                val cartItem = cartItems.first()
                 if (newQuantity <= 0) {
                     database.cartDao().deleteCartItem(cartItem)
                 } else {
@@ -295,8 +300,44 @@ class BookNestRepository(
 
     // Initialize sample data
     suspend fun initializeSampleData() {
+        // Check if data already exists to avoid duplicates
+        val existingBooks = database.bookDao().getAllBooks().first()
+        if (existingBooks.isNotEmpty()) {
+            return // Data already initialized
+        }
+
+        // Initialize sample users first
+        val users = getSampleUsers()
+        users.forEach { user ->
+            database.userDao().insertUser(user)
+        }
+
+        // Initialize sample books
         val books = getSampleBooksForDatabase()
         database.bookDao().insertBooks(books)
+
+        // Initialize sample cart items for the first user
+        val cartItems = getSampleCartItems()
+        cartItems.forEach { cartItem ->
+            database.cartDao().insertCartItem(cartItem)
+        }
+
+        // Initialize sample wishlist items
+        val wishlistItems = getSampleWishlistItems()
+        wishlistItems.forEach { wishlistItem ->
+            database.wishlistDao().insertWishlistItem(wishlistItem)
+        }
+
+        // Initialize sample orders and rentals
+        val orders = getSampleOrders()
+        orders.forEach { order ->
+            database.orderDao().insertOrder(order)
+        }
+
+        val rentals = getSampleRentals()
+        rentals.forEach { rental ->
+            database.rentalDao().insertRental(rental)
+        }
     }
 
     // Check if first time launch
@@ -462,6 +503,260 @@ class BookNestRepository(
             Result.failure(e)
         }
     }
+
+    // Order operations
+    suspend fun createOrderFromCart(userId: String, deliveryAddress: String = ""): Result<Order> {
+        return try {
+            val cartItems = getCartItems(userId).first()
+            if (cartItems.isEmpty()) {
+                return Result.failure(Exception("Cart is empty"))
+            }
+
+            val orderId = UUID.randomUUID().toString()
+            val orderDate = System.currentTimeMillis()
+
+            val orderItems = mutableListOf<OrderItem>()
+            val userBooks = mutableListOf<UserBookEntity>()
+            var totalAmount = 0.0
+
+            for (cartItem in cartItems) {
+                val book = database.bookDao().getBookById(cartItem.book.id)?.toBook()
+                if (book != null) {
+                    val itemPrice = if (cartItem.isRental) {
+                        book.rentalPrice * cartItem.quantity * cartItem.rentalDays
+                    } else {
+                        book.price * cartItem.quantity
+                    }
+
+                    val rentalStartDate = if (cartItem.isRental) orderDate else null
+                    val rentalEndDate = if (cartItem.isRental) {
+                        orderDate + (cartItem.rentalDays * 24 * 60 * 60 * 1000L)
+                    } else null
+
+                    val orderItem = OrderItem(
+                        book = book,
+                        quantity = cartItem.quantity,
+                        isRental = cartItem.isRental,
+                        rentalDays = cartItem.rentalDays,
+                        itemPrice = itemPrice,
+                        rentalStartDate = rentalStartDate,
+                        rentalEndDate = rentalEndDate
+                    )
+
+                    orderItems.add(orderItem)
+                    totalAmount += itemPrice
+
+                    // Update stock quantity for purchases
+                    if (!cartItem.isRental) {
+                        database.bookDao().updateStock(book.id, cartItem.quantity)
+                    }
+
+                    // Create rental record if it's a rental
+                    if (cartItem.isRental) {
+                        val rentalEntity = RentalEntity(
+                            id = UUID.randomUUID().toString(),
+                            bookId = book.id,
+                            userId = userId,
+                            startDate = orderDate,
+                            endDate = rentalEndDate!!,
+                            totalDays = cartItem.rentalDays,
+                            isActive = true,
+                            rentalPrice = itemPrice
+                        )
+                        database.rentalDao().insertRental(rentalEntity)
+                    }
+
+                    // Add book to user's collection (for both purchases and rentals)
+                    val userBook = UserBookEntity(
+                        userId = userId,
+                        bookId = book.id,
+                        purchaseDate = orderDate,
+                        orderId = orderId,
+                        quantity = cartItem.quantity,
+                        purchasePrice = itemPrice,
+                        accessExpiryDate = rentalEndDate, // null for purchases, expiry date for rentals
+                        isRental = cartItem.isRental
+                    )
+                    userBooks.add(userBook)
+                }
+            }
+
+            // Create order entity
+            val orderEntity = OrderEntity(
+                id = orderId,
+                userId = userId,
+                totalAmount = totalAmount,
+                orderStatus = OrderStatus.CONFIRMED.name,
+                paymentMethod = "To be integrated", // Placeholder for payment gateway
+                deliveryAddress = deliveryAddress,
+                orderDate = orderDate
+            )
+
+            // Create order items entities
+            val orderItemEntities = orderItems.map { orderItem ->
+                OrderItemEntity(
+                    orderId = orderId,
+                    bookId = orderItem.book.id,
+                    quantity = orderItem.quantity,
+                    price = orderItem.itemPrice,
+                    isRental = orderItem.isRental,
+                    rentalDays = orderItem.rentalDays,
+                    rentalStartDate = orderItem.rentalStartDate,
+                    rentalEndDate = orderItem.rentalEndDate
+                )
+            }
+
+            // Insert order and order items
+            database.orderDao().insertOrder(orderEntity)
+            database.orderDao().insertOrderItems(orderItemEntities)
+
+            // Insert user books (purchased/rented books) - THIS IS THE KEY FIX
+            database.userBooksDao().insertUserBooks(userBooks)
+
+            // Clear cart after successful order
+            database.cartDao().clearCart(userId)
+
+            val order = Order(
+                id = orderId,
+                userId = userId,
+                items = orderItems,
+                totalAmount = totalAmount,
+                orderDate = orderDate,
+                status = OrderStatus.CONFIRMED,
+                paymentMethod = "To be integrated",
+                deliveryAddress = deliveryAddress
+            )
+
+            Result.success(order)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // Get user orders
+    fun getUserOrders(userId: String): Flow<List<Order>> {
+        return database.orderDao().getUserOrders(userId).map { orderEntities ->
+            orderEntities.map { orderEntity ->
+                val orderItems = database.orderDao().getOrderItems(orderEntity.id).map { orderItemEntity ->
+                    val book = database.bookDao().getBookById(orderItemEntity.bookId)?.toBook()
+                    if (book != null) {
+                        OrderItem(
+                            book = book,
+                            quantity = orderItemEntity.quantity,
+                            isRental = orderItemEntity.isRental,
+                            rentalDays = orderItemEntity.rentalDays,
+                            itemPrice = orderItemEntity.price,
+                            rentalStartDate = orderItemEntity.rentalStartDate,
+                            rentalEndDate = orderItemEntity.rentalEndDate
+                        )
+                    } else null
+                }.filterNotNull()
+
+                Order(
+                    id = orderEntity.id,
+                    userId = orderEntity.userId,
+                    items = orderItems,
+                    totalAmount = orderEntity.totalAmount,
+                    orderDate = orderEntity.orderDate,
+                    status = OrderStatus.valueOf(orderEntity.orderStatus),
+                    paymentMethod = orderEntity.paymentMethod,
+                    deliveryAddress = orderEntity.deliveryAddress
+                )
+            }
+        }
+    }
+
+    suspend fun getOrderById(orderId: String): Order? {
+        return try {
+            val orderEntity = database.orderDao().getOrderById(orderId) ?: return null
+            val orderItems = database.orderDao().getOrderItems(orderId).map { orderItemEntity ->
+                val book = database.bookDao().getBookById(orderItemEntity.bookId)?.toBook()
+                if (book != null) {
+                    OrderItem(
+                        book = book,
+                        quantity = orderItemEntity.quantity,
+                        isRental = orderItemEntity.isRental,
+                        rentalDays = orderItemEntity.rentalDays,
+                        itemPrice = orderItemEntity.price,
+                        rentalStartDate = orderItemEntity.rentalStartDate,
+                        rentalEndDate = orderItemEntity.rentalEndDate
+                    )
+                } else null
+            }.filterNotNull()
+
+            Order(
+                id = orderEntity.id,
+                userId = orderEntity.userId,
+                items = orderItems,
+                totalAmount = orderEntity.totalAmount,
+                orderDate = orderEntity.orderDate,
+                status = OrderStatus.valueOf(orderEntity.orderStatus),
+                paymentMethod = orderEntity.paymentMethod,
+                deliveryAddress = orderEntity.deliveryAddress
+            )
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // Rental operations
+    fun getActiveRentals(userId: String): kotlinx.coroutines.flow.Flow<List<com.booknest.app.ui.rentals.RentalItem>> {
+        return database.rentalDao().getActiveRentals(userId).map { rentalEntities ->
+            rentalEntities.mapNotNull { rentalEntity ->
+                val book = database.bookDao().getBookById(rentalEntity.bookId)?.toBook()
+                if (book != null) {
+                    val remainingDays = ((rentalEntity.endDate - System.currentTimeMillis()) / (24 * 60 * 60 * 1000)).toInt()
+                    com.booknest.app.ui.rentals.RentalItem(
+                        book = book,
+                        remainingDays = maxOf(0, remainingDays),
+                        totalDays = rentalEntity.totalDays,
+                        isActive = rentalEntity.isActive && remainingDays > 0
+                    )
+                } else null
+            }
+        }
+    }
+
+    fun getPastRentals(userId: String): kotlinx.coroutines.flow.Flow<List<com.booknest.app.ui.rentals.RentalItem>> {
+        return database.rentalDao().getPastRentals(userId).map { rentalEntities ->
+            rentalEntities.mapNotNull { rentalEntity ->
+                val book = database.bookDao().getBookById(rentalEntity.bookId)?.toBook()
+                if (book != null) {
+                    com.booknest.app.ui.rentals.RentalItem(
+                        book = book,
+                        remainingDays = 0,
+                        totalDays = rentalEntity.totalDays,
+                        isActive = false
+                    )
+                } else null
+            }
+        }
+    }
+
+    // User Books operations - NEW METHODS FOR PURCHASED BOOKS
+    fun getUserPurchasedBooks(userId: String): Flow<List<Book>> {
+        return database.userBooksDao().getUserPurchasedBooks(userId).map { userBookEntities ->
+            userBookEntities.mapNotNull { userBookEntity ->
+                database.bookDao().getBookById(userBookEntity.bookId)?.toBook()
+            }
+        }
+    }
+
+    fun getUserRentedBooks(userId: String): Flow<List<Book>> {
+        return database.userBooksDao().getUserActiveRentedBooks(userId).map { userBookEntities ->
+            userBookEntities.mapNotNull { userBookEntity ->
+                database.bookDao().getBookById(userBookEntity.bookId)?.toBook()
+            }
+        }
+    }
+
+    fun getAllUserBooks(userId: String): Flow<List<Book>> {
+        return database.userBooksDao().getAllUserBooks(userId).map { userBookEntities ->
+            userBookEntities.mapNotNull { userBookEntity ->
+                database.bookDao().getBookById(userBookEntity.bookId)?.toBook()
+            }
+        }
+    }
 }
 
 // Extension functions to convert between entities and data classes
@@ -570,11 +865,11 @@ private fun getSampleBooksForDatabase(): List<BookEntity> {
             rentalPrice = 150.0,
             condition = BookCondition.GOOD.name,
             category = "Academic",
-            description = "Complete guide to DSA",
-            sellerId = "seller1",
-            sellerName = "John Doe",
-            sellerRating = 4.5f,
-            sellerLocation = "Mumbai",
+            description = "Complete guide to DSA with implementation in Java and C++",
+            sellerId = "seller2",
+            sellerName = "Jane Smith",
+            sellerRating = 4.8f,
+            sellerLocation = "Pune",
             rating = 4.8f,
             isAvailableForRent = true,
             isAvailableForPurchase = true,
@@ -590,11 +885,11 @@ private fun getSampleBooksForDatabase(): List<BookEntity> {
             rentalPrice = 120.0,
             condition = BookCondition.LIKE_NEW.name,
             category = "Self Help",
-            description = "An easy & proven way to build good habits",
-            sellerId = "seller1",
-            sellerName = "John Doe",
-            sellerRating = 4.5f,
-            sellerLocation = "Mumbai",
+            description = "An easy & proven way to build good habits and break bad ones",
+            sellerId = "seller3",
+            sellerName = "Alice Johnson",
+            sellerRating = 4.6f,
+            sellerLocation = "Bangalore",
             rating = 4.7f,
             isAvailableForRent = true,
             isAvailableForPurchase = true,
@@ -610,11 +905,11 @@ private fun getSampleBooksForDatabase(): List<BookEntity> {
             rentalPrice = 200.0,
             condition = BookCondition.GOOD.name,
             category = "Academic",
-            description = "Essential concepts in OS",
-            sellerId = "seller1",
-            sellerName = "John Doe",
-            sellerRating = 4.5f,
-            sellerLocation = "Mumbai",
+            description = "Essential concepts in operating systems design and implementation",
+            sellerId = "seller4",
+            sellerName = "Mike Johnson",
+            sellerRating = 4.4f,
+            sellerLocation = "Chennai",
             rating = 4.5f,
             isAvailableForRent = true,
             isAvailableForPurchase = true,
@@ -630,7 +925,7 @@ private fun getSampleBooksForDatabase(): List<BookEntity> {
             rentalPrice = 89.0,
             condition = BookCondition.GOOD.name,
             category = "Fiction",
-            description = "A magical story about following your dreams",
+            description = "A magical story about following your dreams and finding your purpose",
             sellerId = "seller1",
             sellerName = "John Doe",
             sellerRating = 4.5f,
@@ -640,6 +935,353 @@ private fun getSampleBooksForDatabase(): List<BookEntity> {
             isAvailableForPurchase = true,
             isNewBook = false,
             stockQuantity = 4
+        ),
+        BookEntity(
+            id = "6",
+            title = "Harry Potter and the Philosopher's Stone",
+            author = "J.K. Rowling",
+            coverImageUrl = "",
+            price = 350.0,
+            rentalPrice = 75.0,
+            condition = BookCondition.NEW.name,
+            category = "Fantasy",
+            description = "The magical beginning of Harry Potter's journey at Hogwarts",
+            sellerId = "seller2",
+            sellerName = "Jane Smith",
+            sellerRating = 4.8f,
+            sellerLocation = "Pune",
+            rating = 4.9f,
+            isAvailableForRent = true,
+            isAvailableForPurchase = true,
+            isNewBook = true,
+            stockQuantity = 8
+        ),
+        BookEntity(
+            id = "7",
+            title = "Clean Code",
+            author = "Robert C. Martin",
+            coverImageUrl = "",
+            price = 550.0,
+            rentalPrice = 140.0,
+            condition = BookCondition.LIKE_NEW.name,
+            category = "Programming",
+            description = "A handbook of agile software craftsmanship",
+            sellerId = "seller3",
+            sellerName = "Alice Johnson",
+            sellerRating = 4.6f,
+            sellerLocation = "Bangalore",
+            rating = 4.7f,
+            isAvailableForRent = true,
+            isAvailableForPurchase = true,
+            isNewBook = false,
+            stockQuantity = 6
+        ),
+        BookEntity(
+            id = "8",
+            title = "Sapiens",
+            author = "Yuval Noah Harari",
+            coverImageUrl = "",
+            price = 425.0,
+            rentalPrice = 110.0,
+            condition = BookCondition.NEW.name,
+            category = "History",
+            description = "A brief history of humankind and our journey from cavemen to space explorers",
+            sellerId = "seller4",
+            sellerName = "Mike Johnson",
+            sellerRating = 4.4f,
+            sellerLocation = "Chennai",
+            rating = 4.6f,
+            isAvailableForRent = true,
+            isAvailableForPurchase = true,
+            isNewBook = true,
+            stockQuantity = 7
+        ),
+        BookEntity(
+            id = "9",
+            title = "The Great Gatsby",
+            author = "F. Scott Fitzgerald",
+            coverImageUrl = "",
+            price = 250.0,
+            rentalPrice = 65.0,
+            condition = BookCondition.GOOD.name,
+            category = "Classic Literature",
+            description = "A timeless American classic about the Jazz Age and the American Dream",
+            sellerId = "seller1",
+            sellerName = "John Doe",
+            sellerRating = 4.5f,
+            sellerLocation = "Mumbai",
+            rating = 4.3f,
+            isAvailableForRent = true,
+            isAvailableForPurchase = true,
+            isNewBook = false,
+            stockQuantity = 3
+        ),
+        BookEntity(
+            id = "10",
+            title = "Think and Grow Rich",
+            author = "Napoleon Hill",
+            coverImageUrl = "",
+            price = 320.0,
+            rentalPrice = 85.0,
+            condition = BookCondition.FAIR.name,
+            category = "Self Help",
+            description = "The classic guide to wealth and success through the power of thought",
+            sellerId = "seller2",
+            sellerName = "Jane Smith",
+            sellerRating = 4.8f,
+            sellerLocation = "Pune",
+            rating = 4.2f,
+            isAvailableForRent = true,
+            isAvailableForPurchase = true,
+            isNewBook = false,
+            stockQuantity = 4
+        ),
+        BookEntity(
+            id = "11",
+            title = "Introduction to Machine Learning",
+            author = "Alpaydin Ethem",
+            coverImageUrl = "",
+            price = 750.0,
+            rentalPrice = 180.0,
+            condition = BookCondition.NEW.name,
+            category = "Academic",
+            description = "Comprehensive introduction to machine learning algorithms and applications",
+            sellerId = "seller3",
+            sellerName = "Alice Johnson",
+            sellerRating = 4.6f,
+            sellerLocation = "Bangalore",
+            rating = 4.5f,
+            isAvailableForRent = true,
+            isAvailableForPurchase = true,
+            isNewBook = true,
+            stockQuantity = 5
+        ),
+        BookEntity(
+            id = "12",
+            title = "The Hobbit",
+            author = "J.R.R. Tolkien",
+            coverImageUrl = "",
+            price = 380.0,
+            rentalPrice = 95.0,
+            condition = BookCondition.GOOD.name,
+            category = "Fantasy",
+            description = "A delightful adventure story that precedes The Lord of the Rings",
+            sellerId = "seller4",
+            sellerName = "Mike Johnson",
+            sellerRating = 4.4f,
+            sellerLocation = "Chennai",
+            rating = 4.8f,
+            isAvailableForRent = true,
+            isAvailableForPurchase = true,
+            isNewBook = false,
+            stockQuantity = 6
+        ),
+        BookEntity(
+            id = "13",
+            title = "Rich Dad Poor Dad",
+            author = "Robert Kiyosaki",
+            coverImageUrl = "",
+            price = 340.0,
+            rentalPrice = 90.0,
+            condition = BookCondition.LIKE_NEW.name,
+            category = "Finance",
+            description = "What the rich teach their kids about money that the poor and middle class do not",
+            sellerId = "seller1",
+            sellerName = "John Doe",
+            sellerRating = 4.5f,
+            sellerLocation = "Mumbai",
+            rating = 4.4f,
+            isAvailableForRent = true,
+            isAvailableForPurchase = true,
+            isNewBook = false,
+            stockQuantity = 8
+        ),
+        BookEntity(
+            id = "14",
+            title = "The Pragmatic Programmer",
+            author = "David Thomas",
+            coverImageUrl = "",
+            price = 620.0,
+            rentalPrice = 155.0,
+            condition = BookCondition.GOOD.name,
+            category = "Programming",
+            description = "Your journey to mastery in software development",
+            sellerId = "seller2",
+            sellerName = "Jane Smith",
+            sellerRating = 4.8f,
+            sellerLocation = "Pune",
+            rating = 4.6f,
+            isAvailableForRent = true,
+            isAvailableForPurchase = true,
+            isNewBook = false,
+            stockQuantity = 4
+        ),
+        BookEntity(
+            id = "15",
+            title = "1984",
+            author = "George Orwell",
+            coverImageUrl = "",
+            price = 275.0,
+            rentalPrice = 70.0,
+            condition = BookCondition.GOOD.name,
+            category = "Classic Literature",
+            description = "A dystopian social science fiction novel about totalitarian control",
+            sellerId = "seller3",
+            sellerName = "Alice Johnson",
+            sellerRating = 4.6f,
+            sellerLocation = "Bangalore",
+            rating = 4.7f,
+            isAvailableForRent = true,
+            isAvailableForPurchase = true,
+            isNewBook = false,
+            stockQuantity = 5
         )
     )
 }
+
+private fun getSampleUsers(): List<UserEntity> {
+    return listOf(
+        UserEntity(
+            id = "user1",
+            name = "Test User",
+            email = "test@example.com",
+            passwordHash = PasswordUtils.hashPassword("password123"),
+            profileImageUrl = "",
+            rating = 4.5f,
+            location = "Mumbai, India",
+            isLoggedIn = false
+        ),
+        UserEntity(
+            id = "seller1",
+            name = "John Doe",
+            email = "john.doe@example.com",
+            passwordHash = PasswordUtils.hashPassword("password123"),
+            profileImageUrl = "",
+            rating = 4.5f,
+            location = "Mumbai, India",
+            isLoggedIn = false
+        ),
+        UserEntity(
+            id = "seller2",
+            name = "Jane Smith",
+            email = "jane.smith@example.com",
+            passwordHash = PasswordUtils.hashPassword("password123"),
+            profileImageUrl = "",
+            rating = 4.8f,
+            location = "Pune, India",
+            isLoggedIn = false
+        ),
+        UserEntity(
+            id = "seller3",
+            name = "Alice Johnson",
+            email = "alice.johnson@example.com",
+            passwordHash = PasswordUtils.hashPassword("password123"),
+            profileImageUrl = "",
+            rating = 4.6f,
+            location = "Bangalore, India",
+            isLoggedIn = false
+        ),
+        UserEntity(
+            id = "seller4",
+            name = "Mike Johnson",
+            email = "mike.johnson@example.com",
+            passwordHash = PasswordUtils.hashPassword("password123"),
+            profileImageUrl = "",
+            rating = 4.4f,
+            location = "Chennai, India",
+            isLoggedIn = false
+        )
+    )
+}
+
+private fun getSampleCartItems(): List<CartItemEntity> {
+    return listOf(
+        CartItemEntity(
+            bookId = "1",
+            userId = "user1",
+            quantity = 1,
+            isRental = false,
+            rentalDays = 0
+        ),
+        CartItemEntity(
+            bookId = "2",
+            userId = "user1",
+            quantity = 2,
+            isRental = true,
+            rentalDays = 7
+        ),
+        CartItemEntity(
+            bookId = "3",
+            userId = "user2",
+            quantity = 1,
+            isRental = false,
+            rentalDays = 0
+        )
+    )
+}
+
+private fun getSampleWishlistItems(): List<WishlistItemEntity> {
+    return listOf(
+        WishlistItemEntity(
+            bookId = "1",
+            userId = "user1"
+        ),
+        WishlistItemEntity(
+            bookId = "2",
+            userId = "user2"
+        ),
+        WishlistItemEntity(
+            bookId = "3",
+            userId = "user2"
+        )
+    )
+}
+
+private fun getSampleOrders(): List<OrderEntity> {
+    return listOf(
+        OrderEntity(
+            id = "order1",
+            userId = "user1",
+            totalAmount = 399.0,
+            orderStatus = OrderStatus.CONFIRMED.name,
+            paymentMethod = "Credit Card",
+            deliveryAddress = "123, Baker Street, Mumbai",
+            orderDate = System.currentTimeMillis()
+        ),
+        OrderEntity(
+            id = "order2",
+            userId = "user2",
+            totalAmount = 650.0,
+            orderStatus = OrderStatus.PENDING.name,
+            paymentMethod = "Debit Card",
+            deliveryAddress = "456, Elm Street, Pune",
+            orderDate = System.currentTimeMillis()
+        )
+    )
+}
+
+private fun getSampleRentals(): List<RentalEntity> {
+    return listOf(
+        RentalEntity(
+            id = "rental1",
+            bookId = "2",
+            userId = "user1",
+            startDate = System.currentTimeMillis(),
+            endDate = System.currentTimeMillis() + (7 * 24 * 60 * 60 * 1000),
+            totalDays = 7,
+            isActive = true,
+            rentalPrice = 150.0
+        ),
+        RentalEntity(
+            id = "rental2",
+            bookId = "3",
+            userId = "user2",
+            startDate = System.currentTimeMillis() - (2 * 24 * 60 * 60 * 1000),
+            endDate = System.currentTimeMillis() + (5 * 24 * 60 * 60 * 1000),
+            totalDays = 5,
+            isActive = true,
+            rentalPrice = 120.0
+        )
+    )
+}
+

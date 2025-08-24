@@ -470,7 +470,6 @@ fun SellBookScreen(
             ImagePickerBottomSheet(
                 onImageSelected = { uri ->
                     selectedImageUri = uri
-                    showImagePicker = false // Close the bottom sheet
                 },
                 onDismiss = { showImagePicker = false }
             )

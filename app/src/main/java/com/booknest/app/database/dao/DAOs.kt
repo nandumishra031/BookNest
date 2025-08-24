@@ -72,8 +72,11 @@ interface CartDao {
     @Query("SELECT * FROM cart_items WHERE userId = :userId")
     fun getCartItems(userId: String): Flow<List<CartItemEntity>>
 
+    @Query("SELECT * FROM cart_items WHERE userId = :userId AND bookId = :bookId AND isRental = :isRental")
+    suspend fun getCartItem(userId: String, bookId: String, isRental: Boolean): CartItemEntity?
+
     @Query("SELECT * FROM cart_items WHERE userId = :userId AND bookId = :bookId")
-    suspend fun getCartItem(userId: String, bookId: String): CartItemEntity?
+    suspend fun getAllCartItemsForBook(userId: String, bookId: String): List<CartItemEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCartItem(cartItem: CartItemEntity)
@@ -149,4 +152,31 @@ interface OrderDao {
 
     @Query("SELECT * FROM order_items WHERE orderId = :orderId")
     suspend fun getOrderItems(orderId: String): List<OrderItemEntity>
+}
+
+@Dao
+interface UserBooksDao {
+    @Query("SELECT * FROM user_books WHERE userId = :userId AND isRental = 0 ORDER BY purchaseDate DESC")
+    fun getUserPurchasedBooks(userId: String): Flow<List<UserBookEntity>>
+
+    @Query("SELECT * FROM user_books WHERE userId = :userId AND isRental = 1 AND (accessExpiryDate IS NULL OR accessExpiryDate > :currentTime) ORDER BY purchaseDate DESC")
+    fun getUserActiveRentedBooks(userId: String, currentTime: Long = System.currentTimeMillis()): Flow<List<UserBookEntity>>
+
+    @Query("SELECT * FROM user_books WHERE userId = :userId ORDER BY purchaseDate DESC")
+    fun getAllUserBooks(userId: String): Flow<List<UserBookEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUserBook(userBook: UserBookEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUserBooks(userBooks: List<UserBookEntity>)
+
+    @Query("SELECT * FROM user_books WHERE userId = :userId AND bookId = :bookId AND isRental = :isRental")
+    suspend fun getUserBook(userId: String, bookId: String, isRental: Boolean): UserBookEntity?
+
+    @Update
+    suspend fun updateUserBook(userBook: UserBookEntity)
+
+    @Delete
+    suspend fun deleteUserBook(userBook: UserBookEntity)
 }

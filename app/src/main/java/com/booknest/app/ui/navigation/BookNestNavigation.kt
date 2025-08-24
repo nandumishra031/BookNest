@@ -1,10 +1,25 @@
 package com.booknest.app.ui.navigation
 
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.NavBackStackEntry
+import com.booknest.app.data.Order
 import com.booknest.app.ui.auth.LoginScreen
 import com.booknest.app.ui.auth.SignUpScreen
 import com.booknest.app.ui.book.BookDetailsScreen
@@ -12,12 +27,11 @@ import com.booknest.app.ui.books.MyBooksScreen
 import com.booknest.app.ui.cart.CartScreen
 import com.booknest.app.ui.cart.CheckoutScreen
 import com.booknest.app.ui.home.HomeScreen
-import com.booknest.app.ui.home.getSampleBooks
 import com.booknest.app.ui.onboarding.OnboardingScreen
+import com.booknest.app.ui.order.OrderSuccessScreen
 import com.booknest.app.ui.profile.ProfileScreen
 import com.booknest.app.ui.profile.EditProfileScreen
 import com.booknest.app.ui.rentals.RentalsScreen
-import com.booknest.app.ui.rentals.RentalItem
 import com.booknest.app.ui.rental.RentalViewerScreen
 import com.booknest.app.ui.sell.SellBookScreen
 import com.booknest.app.ui.settings.SettingsScreen
@@ -25,8 +39,6 @@ import com.booknest.app.ui.settings.ChangePasswordScreen
 import com.booknest.app.ui.settings.NotificationSettingsScreen
 import com.booknest.app.ui.settings.PrivacySettingsScreen
 import com.booknest.app.viewmodel.BookNestViewModel
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 
 @Composable
 fun BookNestNavigation(
@@ -40,6 +52,11 @@ fun BookNestNavigation(
     val trendingBooks by viewModel.trendingBooks.collectAsState(initial = emptyList())
     val cartItems by viewModel.cartItems.collectAsState()
     val wishlistItems by viewModel.wishlistItems.collectAsState()
+    val activeRentals by viewModel.activeRentals.collectAsState()
+    val pastRentals by viewModel.pastRentals.collectAsState()
+
+    // Add the missing purchased books data - THIS WAS MISSING!
+    val userPurchasedBooks by viewModel.userPurchasedBooks.collectAsState()
 
     NavHost(
         navController = navController,
@@ -87,40 +104,47 @@ fun BookNestNavigation(
             HomeScreen(
                 books = allBooks,
                 trendingBooks = trendingBooks,
+                viewModel = viewModel,
                 onBookClick = { book ->
                     navController.navigate("book_details/${book.id}")
                 },
-                onNotificationClick = {
-                    // Navigate to notifications
-                },
-                onSellClick = {
-                    navController.navigate("sell")
+                onCategoryClick = { category ->
+                    // Navigate to category filter or search with category
+                    // For now, we can leave this empty or implement later
                 }
             )
         }
 
         composable("book_details/{bookId}") { backStackEntry: NavBackStackEntry ->
             val bookId = backStackEntry.arguments?.getString("bookId")
+            // Only use database books - no fallback to sample books
             val book = allBooks.find { it.id == bookId }
 
             if (book != null) {
                 BookDetailsScreen(
                     book = book,
-                    currentUser = currentUser, // Pass current user
+                    currentUser = currentUser,
                     isInWishlist = wishlistItems.any { it.id == book.id },
                     onBackClick = {
                         navController.popBackStack()
                     },
                     onAddToCart = {
-                        // Only add to cart if not own book
-                        if (currentUser?.id != book.seller.id) {
-                            viewModel.addToCart(book)
+                        // Check if user is logged in first
+                        if (currentUser == null) {
+                            // Navigate to login if not logged in
+                            navController.navigate("login")
+                        } else if (currentUser?.id != book.seller.id) {
+                            viewModel.addToCart(book, quantity = 1, isRental = false, rentalDays = 0)
+                            // Navigate to cart to show success
                             navController.navigate("cart")
                         }
                     },
                     onAddToWishlist = {
-                        // Only allow wishlist if not own book
-                        if (currentUser?.id != book.seller.id) {
+                        // Check if user is logged in first
+                        if (currentUser == null) {
+                            // Navigate to login if not logged in
+                            navController.navigate("login")
+                        } else if (currentUser?.id != book.seller.id) {
                             if (wishlistItems.any { it.id == book.id }) {
                                 viewModel.removeFromWishlist(book.id)
                             } else {
@@ -129,15 +153,57 @@ fun BookNestNavigation(
                         }
                     },
                     onSellerClick = {
-                        // Navigate to seller profile
+                        // Navigate to seller profile (placeholder for now)
                     },
                     onRentClick = {
-                        // Only allow rent if not own book
-                        if (currentUser?.id != book.seller.id) {
-                            navController.navigate("rental_viewer/${book.id}")
+                        // Check if user is logged in first
+                        if (currentUser == null) {
+                            // Navigate to login if not logged in
+                            navController.navigate("login")
+                        } else if (currentUser?.id != book.seller.id) {
+                            // For now, add as rental to cart with default 30 days
+                            viewModel.addToCart(book, quantity = 1, isRental = true, rentalDays = 30)
+                            navController.navigate("cart")
                         }
                     }
                 )
+            } else {
+                // Show error screen when book is not found
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ErrorOutline,
+                        contentDescription = "Error",
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Book Not Found",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "The book you're looking for could not be found. Book ID: $bookId",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Button(
+                        onClick = {
+                            navController.popBackStack()
+                        }
+                    ) {
+                        Text("Go Back")
+                    }
+                }
             }
         }
 
@@ -179,18 +245,67 @@ fun BookNestNavigation(
 
         composable("checkout") {
             CheckoutScreen(
-                totalAmount = cartItems.sumOf { it.book.price * it.quantity },
+                totalAmount = viewModel.calculateCartTotal(),
                 onBackClick = {
                     navController.popBackStack()
                 },
                 onPlaceOrder = {
-                    // Clear cart after successful order
-                    viewModel.clearCart()
-                    navController.navigate("home") {
-                        popUpTo("checkout") { inclusive = true }
+                    // Use the new order system instead of just clearing cart
+                    viewModel.placeOrder() { success, message, order ->
+                        if (success && order != null) {
+                            // Navigate to order success screen (we'll create this route)
+                            navController.navigate("order_success/${order.id}") {
+                                popUpTo("checkout") { inclusive = true }
+                            }
+                        } else {
+                            // Handle error - for now just go back to cart
+                            navController.popBackStack()
+                        }
                     }
                 }
             )
+        }
+
+        composable("order_success/{orderId}") { backStackEntry: NavBackStackEntry ->
+            val orderId = backStackEntry.arguments?.getString("orderId")
+            var order by remember { mutableStateOf<Order?>(null) }
+
+            LaunchedEffect(orderId) {
+                if (orderId != null) {
+                    viewModel.getOrderById(orderId) { foundOrder ->
+                        order = foundOrder
+                    }
+                }
+            }
+
+            if (order != null) {
+                OrderSuccessScreen(
+                    order = order!!,
+                    onNavigateToHome = {
+                        navController.navigate("home") {
+                            popUpTo("order_success/{orderId}") { inclusive = true }
+                        }
+                    },
+                    onViewOrderDetails = {
+                        // For now, just go to home - you can add order details screen later
+                        navController.navigate("home") {
+                            popUpTo("order_success/{orderId}") { inclusive = true }
+                        }
+                    }
+                )
+            } else {
+                // Show loading or error state
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (orderId == null) {
+                        Text("Invalid order ID")
+                    } else {
+                        CircularProgressIndicator()
+                    }
+                }
+            }
         }
 
         composable("rental_viewer/{bookId}") { backStackEntry: NavBackStackEntry ->
@@ -209,6 +324,51 @@ fun BookNestNavigation(
                         // Bookmark logic
                     }
                 )
+            } else {
+                // Show error screen when book is not found or user is not logged in
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = if (currentUser == null) Icons.Default.AccountCircle
+                                     else Icons.Default.ErrorOutline,
+                        contentDescription = "Error",
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = if (currentUser == null) "Please Log In" else "Book Not Found",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = if (currentUser == null) "You need to be logged in to view rentals."
+                               else "The book you're looking for could not be found.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Button(
+                        onClick = {
+                            if (currentUser == null) {
+                                navController.navigate("login") {
+                                    popUpTo("rental_viewer/{bookId}") { inclusive = true }
+                                }
+                            } else {
+                                navController.popBackStack()
+                            }
+                        }
+                    ) {
+                        Text(if (currentUser == null) "Go to Login" else "Go Back")
+                    }
+                }
             }
         }
 
@@ -216,9 +376,9 @@ fun BookNestNavigation(
             if (currentUser != null) {
                 ProfileScreen(
                     user = currentUser!!,
-                    myPurchases = allBooks.take(3),
-                    myRentals = wishlistItems.take(2),
-                    myListings = allBooks.drop(2).take(2),
+                    myPurchases = userPurchasedBooks, // Use actual purchased books data
+                    myRentals = activeRentals.map { it.book }, // Use synchronized rental data
+                    myListings = allBooks.filter { it.seller.id == currentUser!!.id },
                     wishlist = wishlistItems,
                     onEditProfile = {
                         navController.navigate("edit_profile")
@@ -243,9 +403,9 @@ fun BookNestNavigation(
             if (currentUser != null) {
                 MyBooksScreen(
                     user = currentUser!!,
-                    myPurchases = allBooks.take(3),
-                    myRentals = allBooks.drop(1).take(2),
-                    myListings = allBooks.drop(2).take(2),
+                    myPurchases = userPurchasedBooks, // Use actual purchased books data
+                    myRentals = activeRentals.map { it.book }, // Use synchronized rental data
+                    myListings = allBooks.filter { it.seller.id == currentUser!!.id },
                     onBookClick = { book ->
                         navController.navigate("book_details/${book.id}")
                     },
@@ -261,8 +421,8 @@ fun BookNestNavigation(
 
         composable("rentals") {
             RentalsScreen(
-                activeRentals = getSampleActiveRentals(),
-                pastRentals = getSamplePastRentals(),
+                activeRentals = activeRentals, // Use synchronized rental data from ViewModel
+                pastRentals = pastRentals, // Use synchronized rental data from ViewModel
                 onBackClick = {
                     navController.popBackStack()
                 },
@@ -368,41 +528,4 @@ fun BookNestNavigation(
             )
         }
     }
-}
-
-// Sample rental data functions
-fun getSampleActiveRentals(): List<RentalItem> {
-    val sampleBooks = getSampleBooks()
-    return listOf(
-        RentalItem(
-            book = sampleBooks[1], // Data Structures and Algorithms
-            remainingDays = 12,
-            totalDays = 30,
-            isActive = true
-        ),
-        RentalItem(
-            book = sampleBooks[3], // Operating System Concepts
-            remainingDays = 3,
-            totalDays = 30,
-            isActive = true
-        )
-    )
-}
-
-fun getSamplePastRentals(): List<RentalItem> {
-    val sampleBooks = getSampleBooks()
-    return listOf(
-        RentalItem(
-            book = sampleBooks[4], // Psychology of Money (index 4, not 0)
-            remainingDays = 0,
-            totalDays = 30,
-            isActive = false
-        ),
-        RentalItem(
-            book = sampleBooks[5], // Atomic Habits (index 5, not 2)
-            remainingDays = 0,
-            totalDays = 30,
-            isActive = false
-        )
-    )
 }
