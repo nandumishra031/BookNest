@@ -36,8 +36,8 @@ fun HomeScreen(
     var isSearchActive by remember { mutableStateOf(false) }
 
     // Use provided data or fallback to sample data if empty
-    val displayBooks = if (books.isNotEmpty()) books else getSampleBooks()
-    val displayTrendingBooks = if (trendingBooks.isNotEmpty()) trendingBooks else {
+    val displayBooks = books.ifEmpty { getSampleBooks() }
+    val displayTrendingBooks = trendingBooks.ifEmpty {
         // Dynamic trending books: mix of different categories
         displayBooks.shuffled().take(6)
     }
