@@ -37,7 +37,10 @@ fun HomeScreen(
 
     // Use provided data or fallback to sample data if empty
     val displayBooks = if (books.isNotEmpty()) books else getSampleBooks()
-    val displayTrendingBooks = if (trendingBooks.isNotEmpty()) trendingBooks else getSampleBooks().take(5)
+    val displayTrendingBooks = if (trendingBooks.isNotEmpty()) trendingBooks else {
+        // Dynamic trending books: mix of different categories
+        displayBooks.shuffled().take(6)
+    }
 
     // Filter books based on search query
     val filteredBooks = remember(searchQuery, displayBooks) {
@@ -52,9 +55,45 @@ fun HomeScreen(
         }
     }
 
-    val recommendedBooks = filteredBooks.drop(2).take(4)
-    val academicBooks = filteredBooks.filter { it.category == "Academic" }
-    val nearbyBooks = filteredBooks.take(3)
+    // Dynamic section filtering with fallbacks
+    val academicBooks = remember(displayBooks) {
+        val academic = displayBooks.filter { it.category == "Academic" }
+        if (academic.isEmpty()) {
+            // Fallback: show books with "academic" keywords in title/description
+            displayBooks.filter {
+                it.title.contains("algorithm", ignoreCase = true) ||
+                it.title.contains("system", ignoreCase = true) ||
+                it.title.contains("data", ignoreCase = true) ||
+                it.description.contains("guide", ignoreCase = true)
+            }.take(4)
+        } else {
+            academic
+        }
+    }
+
+    val recommendedBooks = remember(filteredBooks) {
+        // More intelligent recommendation: exclude academic books, mix different categories
+        val nonAcademic = filteredBooks.filter { it.category != "Academic" }
+        if (nonAcademic.size >= 4) {
+            nonAcademic.shuffled().take(4)
+        } else {
+            // Fallback: take any available books
+            filteredBooks.take(4)
+        }
+    }
+
+    val nearbyBooks = remember(filteredBooks) {
+        // Simulate "nearby" books: prioritize good condition and reasonable price
+        val nearbyFiltered = filteredBooks.filter {
+            it.condition in listOf(BookCondition.NEW, BookCondition.LIKE_NEW, BookCondition.GOOD) &&
+            it.price < 1000 // Reasonable price range
+        }
+        if (nearbyFiltered.isEmpty()) {
+            filteredBooks.take(3) // Fallback to any books
+        } else {
+            nearbyFiltered.take(3)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -190,7 +229,12 @@ fun HomeScreen(
                 // Search results content
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = 16.dp,
+                        bottom = 100.dp
+                    ),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     item {
@@ -205,7 +249,6 @@ fun HomeScreen(
                     items(filteredBooks) { book ->
                         SearchResultBookCard(
                             book = book,
-                            searchQuery = searchQuery,
                             onClick = { onBookClick(book) }
                         )
                     }
@@ -215,7 +258,12 @@ fun HomeScreen(
             // Original home content
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = 16.dp,
+                    bottom = 140.dp // Increased from 100dp to properly clear bottom navigation
+                ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item {
@@ -230,8 +278,9 @@ fun HomeScreen(
                             color = BuyAccent,
                             modifier = Modifier.weight(1f),
                             onClick = {
-                                // Navigate to trending books section or browse
-                                onBookClick(displayTrendingBooks.first())
+                                if (displayTrendingBooks.isNotEmpty()) {
+                                    onBookClick(displayTrendingBooks.first())
+                                }
                             }
                         )
                         QuickActionCard(
@@ -247,7 +296,6 @@ fun HomeScreen(
                             color = RentAccent,
                             modifier = Modifier.weight(1f),
                             onClick = {
-                                // Navigate to academic books or show rental options
                                 if (academicBooks.isNotEmpty()) {
                                     onBookClick(academicBooks.first())
                                 }
@@ -256,91 +304,105 @@ fun HomeScreen(
                     }
                 }
 
-                item {
-                    // Trending Books Section
-                    SectionHeader(
-                        title = "Trending Books",
-                        actionText = "See All",
-                        onActionClick = { }
-                    )
-                }
+                // Trending Books Section - Only show if has items
+                if (displayTrendingBooks.isNotEmpty()) {
+                    item {
+                        SectionHeader(
+                            title = "Trending Books",
+                            actionText = "See All",
+                            onActionClick = { }
+                        )
+                    }
 
-                item {
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = PaddingValues(horizontal = 4.dp)
-                    ) {
-                        items(displayTrendingBooks) { book ->
-                            BookCard(
-                                book = book,
-                                onClick = { onBookClick(book) }
-                            )
+                    item {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            modifier = Modifier.height(200.dp) // Fixed height to prevent layout issues
+                        ) {
+                            items(displayTrendingBooks) { book ->
+                                BookCard(
+                                    book = book,
+                                    onClick = { onBookClick(book) }
+                                )
+                            }
                         }
                     }
                 }
 
-                item {
-                    // Recommended Section
-                    SectionHeader(
-                        title = "Recommended For You",
-                        actionText = "See All",
-                        onActionClick = { }
-                    )
-                }
+                // Recommended Books Section - Only show if has items
+                if (recommendedBooks.isNotEmpty()) {
+                    item {
+                        SectionHeader(
+                            title = "Recommended For You",
+                            actionText = "See All",
+                            onActionClick = { }
+                        )
+                    }
 
-                item {
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = PaddingValues(horizontal = 4.dp)
-                    ) {
-                        items(recommendedBooks) { book ->
-                            BookCard(
-                                book = book,
-                                onClick = { onBookClick(book) }
-                            )
+                    item {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            modifier = Modifier.height(200.dp) // Fixed height to prevent layout issues
+                        ) {
+                            items(recommendedBooks) { book ->
+                                BookCard(
+                                    book = book,
+                                    onClick = { onBookClick(book) }
+                                )
+                            }
                         }
                     }
                 }
 
-                item {
-                    // Academic Books Section
-                    SectionHeader(
-                        title = "Rent Academic Books",
-                        actionText = "Browse All",
-                        onActionClick = { }
-                    )
-                }
+                // Academic Books Section - Only show if has items
+                if (academicBooks.isNotEmpty()) {
+                    item {
+                        SectionHeader(
+                            title = "Rent Academic Books",
+                            actionText = "Browse All",
+                            onActionClick = { }
+                        )
+                    }
 
-                item {
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = PaddingValues(horizontal = 4.dp)
-                    ) {
-                        items(academicBooks) { book ->
-                            AcademicBookCard(
-                                book = book,
-                                onClick = { onBookClick(book) }
-                            )
+                    item {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            modifier = Modifier.height(220.dp) // Slightly taller for academic cards
+                        ) {
+                            items(academicBooks) { book ->
+                                AcademicBookCard(
+                                    book = book,
+                                    onClick = { onBookClick(book) }
+                                )
+                            }
                         }
                     }
                 }
 
-                item {
-                    // Nearby Used Books
-                    SectionHeader(
-                        title = "Used Books Near You",
-                        actionText = "View Map",
-                        onActionClick = { }
-                    )
-                }
+                // Nearby Books Section - Only show if has items
+                if (nearbyBooks.isNotEmpty()) {
+                    item {
+                        SectionHeader(
+                            title = "Used Books Near You",
+                            actionText = "View Map",
+                            onActionClick = { }
+                        )
+                    }
 
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        nearbyBooks.forEach { book ->
-                            NearbyBookCard(
-                                book = book,
-                                onClick = { onBookClick(book) }
-                            )
+                    item {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            nearbyBooks.forEach { book ->
+                                NearbyBookCard(
+                                    book = book,
+                                    onClick = { onBookClick(book) }
+                                )
+                            }
                         }
                     }
                 }
@@ -350,7 +412,33 @@ fun HomeScreen(
 }
 
 @Composable
-fun QuickActionCard(
+private fun SectionHeader(
+    title: String,
+    actionText: String,
+    onActionClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        TextButton(onClick = onActionClick) {
+            Text(
+                text = actionText,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickActionCard(
     title: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     color: Color,
@@ -359,8 +447,8 @@ fun QuickActionCard(
 ) {
     Card(
         modifier = modifier
-            .clickable { onClick() }
-            .height(80.dp),
+            .height(80.dp)
+            .clickable { onClick() },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = color.copy(alpha = 0.1f)
@@ -382,176 +470,185 @@ fun QuickActionCard(
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = title,
-                style = MaterialTheme.typography.labelMedium,
-                color = color,
-                fontWeight = FontWeight.Medium
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                color = color
             )
         }
     }
 }
 
 @Composable
-fun SectionHeader(
-    title: String,
-    actionText: String,
-    onActionClick: () -> Unit
+private fun BookCard(
+    book: Book,
+    onClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground
+    Card(
+        modifier = Modifier
+            .width(120.dp)
+            .wrapContentHeight()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
         )
-        TextButton(onClick = onActionClick) {
-            Text(actionText)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp)
+        ) {
+            // Book cover placeholder
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(100.dp),
+                shape = RoundedCornerShape(8.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Book,
+                        contentDescription = "Book cover",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Safe title handling with fallback
+            Text(
+                text = book.title.takeIf { it.isNotBlank() } ?: "Unknown Title",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurface,
+                minLines = 2 // Ensure consistent height
+            )
+
+            // Safe author handling with fallback
+            Text(
+                text = book.author.takeIf { it.isNotBlank() } ?: "Unknown Author",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                minLines = 1 // Ensure consistent height
+            )
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            // Safe price handling with fallback
+            Text(
+                text = if (book.price > 0) "₹${book.price.toInt()}" else "Price not available",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
 
 @Composable
-fun BookCard(
+private fun AcademicBookCard(
     book: Book,
     onClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .width(140.dp)
+            .wrapContentHeight()
             .clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        )
     ) {
         Column(
-            modifier = Modifier.padding(8.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp)
         ) {
-            // Book Cover
+            // Book cover placeholder
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(160.dp),
+                    .height(120.dp),
                 shape = RoundedCornerShape(8.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = BookCover
+                    containerColor = RentAccent.copy(alpha = 0.2f)
                 )
             ) {
-                // Placeholder for AsyncImage
                 Box(
-                    modifier = Modifier.fillMaxSize().background(Color.Gray)
-                )
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.School,
+                        contentDescription = "Academic book",
+                        tint = RentAccent,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            // Safe title handling with fallback
             Text(
-                text = book.title,
-                style = MaterialTheme.typography.bodyMedium,
+                text = book.title.takeIf { it.isNotBlank() } ?: "Unknown Title",
+                style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Medium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                minLines = 2 // Ensure consistent height
             )
 
+            // Safe author handling with fallback
             Text(
-                text = book.author,
-                style = MaterialTheme.typography.bodySmall,
+                text = book.author.takeIf { it.isNotBlank() } ?: "Unknown Author",
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                minLines = 1 // Ensure consistent height
+            )
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            // Safe rental price handling with fallback
+            Text(
+                text = if (book.rentalPrice > 0) "Rent: ₹${book.rentalPrice.toInt()}/month" else "Rental price not available",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = RentAccent,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = "₹${book.price}",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
         }
     }
 }
 
 @Composable
-fun AcademicBookCard(
-    book: Book,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .width(160.dp)
-            .clickable { onClick() },
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = RentAccent.copy(alpha = 0.1f)
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = book.title,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = book.author,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Icon(
-                    Icons.Default.GetApp,
-                    contentDescription = "Rent",
-                    tint = RentAccent,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "₹${book.rentalPrice}/month",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = RentAccent,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "PDF",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun NearbyBookCard(
+private fun NearbyBookCard(
     book: Book,
     onClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .height(80.dp)
             .clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
@@ -559,291 +656,298 @@ fun NearbyBookCard(
         )
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Book Cover
+            // Book cover placeholder
             Card(
-                modifier = Modifier.size(60.dp),
+                modifier = Modifier.size(56.dp),
                 shape = RoundedCornerShape(8.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = BookCover
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
             ) {
-                // Placeholder for AsyncImage
                 Box(
-                    modifier = Modifier.fillMaxSize().background(Color.Gray)
-                )
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Book,
+                        contentDescription = "Book cover",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                // Safe title handling with fallback
                 Text(
-                    text = book.title,
+                    text = book.title.takeIf { it.isNotBlank() } ?: "Unknown Title",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = book.author,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.LocationOn,
-                        contentDescription = "Location",
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "2.3 km away",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "₹${book.price}",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = book.condition.name,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun SearchResultBookCard(
-    book: Book,
-    searchQuery: String,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() },
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Book Cover
-            Card(
-                modifier = Modifier.size(80.dp, 100.dp),
-                shape = RoundedCornerShape(8.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = BookCover
-                )
-            ) {
-                // Placeholder for AsyncImage
-                Box(
-                    modifier = Modifier.fillMaxSize().background(Color.Gray)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                // Highlight search matches in title
-                Text(
-                    text = book.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    color = if (book.title.contains(searchQuery, ignoreCase = true))
-                        MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
-                // Highlight search matches in author
+                // Safe author handling with fallback
                 Text(
-                    text = "by ${book.author}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (book.author.contains(searchQuery, ignoreCase = true))
-                        MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = book.author.takeIf { it.isNotBlank() } ?: "Unknown Author",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
 
-                // Category chip
-                Card(
-                    modifier = Modifier.padding(top = 4.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (book.category.contains(searchQuery, ignoreCase = true))
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                        else MaterialTheme.colorScheme.surfaceVariant
-                    ),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Text(
-                        text = book.category,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = if (book.category.contains(searchQuery, ignoreCase = true))
-                            MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                // Condition and rating
-                Row(
-                    modifier = Modifier.padding(top = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = book.condition.name,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Icon(
-                        Icons.Default.Star,
-                        contentDescription = "Rating",
-                        modifier = Modifier.size(14.dp),
-                        tint = Color(0xFFFFB000)
-                    )
-                    Text(
-                        text = "${book.rating}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                // Safe condition handling
+                Text(
+                    text = "2.5 km away • ${book.condition.toString()}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
 
             Column(
                 horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                modifier = Modifier.wrapContentWidth()
             ) {
+                // Safe price handling with fallback
                 Text(
-                    text = "₹${book.price}",
-                    style = MaterialTheme.typography.titleMedium,
+                    text = if (book.price > 0) "₹${book.price.toInt()}" else "N/A",
+                    style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
 
-                if (book.isAvailableForRent) {
-                    Text(
-                        text = "Rent ₹${book.rentalPrice}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = RentAccent
-                    )
-                }
-
-                // Action buttons
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    if (book.isAvailableForPurchase) {
-                        Icon(
-                            Icons.Default.ShoppingCart,
-                            contentDescription = "Buy",
-                            modifier = Modifier.size(16.dp),
-                            tint = BuyAccent
-                        )
-                    }
-                    if (book.isAvailableForRent) {
-                        Icon(
-                            Icons.Default.GetApp,
-                            contentDescription = "Rent",
-                            modifier = Modifier.size(16.dp),
-                            tint = RentAccent
-                        )
-                    }
-                }
+                // Safe condition color handling
+                Text(
+                    text = book.condition.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = when (book.condition) {
+                        BookCondition.NEW -> Color(0xFF4CAF50)
+                        BookCondition.LIKE_NEW -> Color(0xFF8BC34A)
+                        BookCondition.GOOD -> Color(0xFFFF9800)
+                        BookCondition.FAIR -> Color(0xFFFF5722)
+                        BookCondition.POOR -> Color(0xFF9E9E9E)
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
 }
+
+@Composable
+private fun SearchResultBookCard(
+    book: Book,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(100.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Book cover placeholder
+            Card(
+                modifier = Modifier.size(76.dp),
+                shape = RoundedCornerShape(8.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Book,
+                        contentDescription = "Book cover",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                // Safe title handling with fallback
+                Text(
+                    text = book.title.takeIf { it.isNotBlank() } ?: "Unknown Title",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                // Safe author handling with fallback
+                Text(
+                    text = "by ${book.author.takeIf { it.isNotBlank() } ?: "Unknown Author"}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                // Safe category handling with fallback
+                Text(
+                    text = book.category.takeIf { it.isNotBlank() } ?: "General",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Column(
+                horizontalAlignment = Alignment.End,
+                modifier = Modifier.wrapContentWidth()
+            ) {
+                // Safe price handling with fallback
+                Text(
+                    text = if (book.price > 0) "₹${book.price.toInt()}" else "Price N/A",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                // Safe condition color handling
+                Text(
+                    text = book.condition.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = when (book.condition) {
+                        BookCondition.NEW -> Color(0xFF4CAF50)
+                        BookCondition.LIKE_NEW -> Color(0xFF8BC34A)
+                        BookCondition.GOOD -> Color(0xFFFF9800)
+                        BookCondition.FAIR -> Color(0xFFFF5722)
+                        BookCondition.POOR -> Color(0xFF9E9E9E)
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
 // Sample data function
 fun getSampleBooks(): List<Book> {
-    val sampleUser = User(
-        id = "1",
-        name = "John Doe",
-        email = "john@example.com",
-        profileImageUrl = "",
-        rating = 4.5f,
-        location = "Mumbai"
-    )
-
     return listOf(
         Book(
             id = "1",
-            title = "The Psychology of Money",
-            author = "Morgan Housel",
+            title = "The Great Gatsby",
+            author = "F. Scott Fitzgerald",
             coverImageUrl = "",
-            price = 399.0,
-            rentalPrice = 99.0,
-            condition = BookCondition.NEW,
-            category = "Finance",
-            description = "Timeless lessons on wealth, greed, and happiness",
-            seller = sampleUser,
-            rating = 4.6f,
-            isAvailableForRent = true,
-            isAvailableForPurchase = true,
-            isNewBook = true
-        ),
-        Book(
-            id = "2",
-            title = "Data Structures and Algorithms",
-            author = "Narasimha Karumanchi",
-            coverImageUrl = "",
-            price = 650.0,
-            rentalPrice = 150.0,
+            price = 299.0,
+            rentalPrice = 50.0,
             condition = BookCondition.GOOD,
-            category = "Academic",
-            description = "Complete guide to DSA",
-            seller = sampleUser,
-            rating = 4.8f,
+            category = "Classic Literature",
+            description = "A classic American novel",
+            seller = User(
+                id = "user1",
+                name = "John Doe",
+                email = "john@example.com",
+                profileImageUrl = "",
+                rating = 4.5f,
+                location = "Delhi"
+            ),
+            rating = 4.2f,
             isAvailableForRent = true,
             isAvailableForPurchase = true,
             isNewBook = false
         ),
         Book(
-            id = "3",
-            title = "Atomic Habits",
-            author = "James Clear",
+            id = "2",
+            title = "Data Structures and Algorithms",
+            author = "Thomas Cormen",
             coverImageUrl = "",
-            price = 450.0,
-            rentalPrice = 120.0,
+            price = 899.0,
+            rentalPrice = 150.0,
             condition = BookCondition.LIKE_NEW,
-            category = "Self Help",
-            description = "An easy & proven way to build good habits",
-            seller = sampleUser,
+            category = "Academic",
+            description = "Comprehensive guide to algorithms",
+            seller = User(
+                id = "user2",
+                name = "Jane Smith",
+                email = "jane@example.com",
+                profileImageUrl = "",
+                rating = 4.8f,
+                location = "Mumbai"
+            ),
             rating = 4.7f,
             isAvailableForRent = true,
             isAvailableForPurchase = true,
             isNewBook = false
         ),
         Book(
+            id = "3",
+            title = "Harry Potter and the Philosopher's Stone",
+            author = "J.K. Rowling",
+            coverImageUrl = "",
+            price = 399.0,
+            rentalPrice = 75.0,
+            condition = BookCondition.NEW,
+            category = "Fantasy",
+            description = "First book in the Harry Potter series",
+            seller = User(
+                id = "user3",
+                name = "Alice Johnson",
+                email = "alice@example.com",
+                profileImageUrl = "",
+                rating = 4.3f,
+                location = "Bangalore"
+            ),
+            rating = 4.9f,
+            isAvailableForRent = true,
+            isAvailableForPurchase = true,
+            isNewBook = true
+        ),
+        Book(
             id = "4",
             title = "Operating System Concepts",
             author = "Abraham Silberschatz",
             coverImageUrl = "",
-            price = 800.0,
+            price = 1299.0,
             rentalPrice = 200.0,
             condition = BookCondition.GOOD,
             category = "Academic",
-            description = "Essential concepts in OS",
-            seller = sampleUser,
+            description = "Comprehensive guide to operating systems",
+            seller = User(
+                id = "user4",
+                name = "Mike Johnson",
+                email = "mike@example.com",
+                profileImageUrl = "",
+                rating = 4.6f,
+                location = "Chennai"
+            ),
             rating = 4.5f,
             isAvailableForRent = true,
             isAvailableForPurchase = true,
@@ -851,19 +955,49 @@ fun getSampleBooks(): List<Book> {
         ),
         Book(
             id = "5",
-            title = "The Alchemist",
-            author = "Paulo Coelho",
+            title = "Psychology of Money",
+            author = "Morgan Housel",
             coverImageUrl = "",
-            price = 299.0,
-            rentalPrice = 89.0,
-            condition = BookCondition.GOOD,
-            category = "Fiction",
-            description = "A magical story about following your dreams",
-            seller = sampleUser,
-            rating = 4.4f,
+            price = 450.0,
+            rentalPrice = 80.0,
+            condition = BookCondition.LIKE_NEW,
+            category = "Finance",
+            description = "Timeless lessons on wealth, greed, and happiness",
+            seller = User(
+                id = "user5",
+                name = "Sarah Wilson",
+                email = "sarah@example.com",
+                profileImageUrl = "",
+                rating = 4.7f,
+                location = "Pune"
+            ),
+            rating = 4.8f,
             isAvailableForRent = true,
             isAvailableForPurchase = true,
             isNewBook = false
+        ),
+        Book(
+            id = "6",
+            title = "Atomic Habits",
+            author = "James Clear",
+            coverImageUrl = "",
+            price = 399.0,
+            rentalPrice = 70.0,
+            condition = BookCondition.NEW,
+            category = "Self Help",
+            description = "An easy and proven way to build good habits and break bad ones",
+            seller = User(
+                id = "user6",
+                name = "David Brown",
+                email = "david@example.com",
+                profileImageUrl = "",
+                rating = 4.4f,
+                location = "Hyderabad"
+            ),
+            rating = 4.9f,
+            isAvailableForRent = true,
+            isAvailableForPurchase = true,
+            isNewBook = true
         )
     )
 }

@@ -375,13 +375,13 @@ fun getSampleActiveRentals(): List<RentalItem> {
     val sampleBooks = getSampleBooks()
     return listOf(
         RentalItem(
-            book = sampleBooks[1], // Data Structures book
+            book = sampleBooks[1], // Data Structures and Algorithms
             remainingDays = 12,
             totalDays = 30,
             isActive = true
         ),
         RentalItem(
-            book = sampleBooks[3], // Operating System book
+            book = sampleBooks[3], // Operating System Concepts
             remainingDays = 3,
             totalDays = 30,
             isActive = true
@@ -393,13 +393,13 @@ fun getSamplePastRentals(): List<RentalItem> {
     val sampleBooks = getSampleBooks()
     return listOf(
         RentalItem(
-            book = sampleBooks[0], // Psychology of Money
+            book = sampleBooks[4], // Psychology of Money (index 4, not 0)
             remainingDays = 0,
             totalDays = 30,
             isActive = false
         ),
         RentalItem(
-            book = sampleBooks[2], // Atomic Habits
+            book = sampleBooks[5], // Atomic Habits (index 5, not 2)
             remainingDays = 0,
             totalDays = 30,
             isActive = false

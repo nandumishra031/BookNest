@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark theme colors - matching your app's DarkBackground color -->
+    <color name="status_bar_color">#0F1415</color>
+    <color name="navigation_bar_color">#0F1415</color>
+</resources>
+
