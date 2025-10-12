@@ -149,6 +149,7 @@ class BookNestViewModel(private val repository: BookNestRepository) : ViewModel(
             result.onSuccess { user ->
                 _currentUser.value = user
                 loadUserData(user.id)
+                repository.setFirstTimeLaunchCompleted()
                 onResult(true, null)
             }.onFailure { exception ->
                 onResult(false, exception.message)
@@ -165,6 +166,7 @@ class BookNestViewModel(private val repository: BookNestRepository) : ViewModel(
             result.onSuccess { user ->
                 _currentUser.value = user
                 loadUserData(user.id)
+                repository.setFirstTimeLaunchCompleted()
                 onResult(true, null)
             }.onFailure { exception ->
                 onResult(false, exception.message)

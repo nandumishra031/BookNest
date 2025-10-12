@@ -102,7 +102,7 @@ fun BookDetailsScreen(
                             model = book.coverImageUrl,
                             contentDescription = book.title,
                             modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
+                            contentScale = ContentScale.Fit
                         )
                     }
 

@@ -17,10 +17,17 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.booknest.app.viewmodel.BookNestViewModel
 
+//@Preview
+//@Composable
+//fun preview(){
+//    LoginScreen({},{})
+//}
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(

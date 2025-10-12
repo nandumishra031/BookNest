@@ -14,9 +14,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.booknest.app.data.Book
 import com.booknest.app.data.BookCondition
 import com.booknest.app.data.User
@@ -30,15 +32,12 @@ fun HomeScreen(
     trendingBooks: List<Book>,
     viewModel: BookNestViewModel,
     onBookClick: (Book) -> Unit,
-    onCategoryClick: (String) -> Unit
+    onCategoryClick: (String) -> Unit,
+    onSeeAllClick: ((String) -> Unit)? = null
 ) {
     // Search state
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
-
-    // Observe initialization state
-    val isInitialized by viewModel.isInitialized.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
 
     // Only use database data - no fallback to hardcoded sample data
     val displayBooks = books
@@ -315,7 +314,7 @@ fun HomeScreen(
                         SectionHeader(
                             title = "Trending Books",
                             actionText = "See All",
-                            onActionClick = { }
+                            onActionClick = { onSeeAllClick?.invoke("trending") }
                         )
                     }
 
@@ -341,7 +340,7 @@ fun HomeScreen(
                         SectionHeader(
                             title = "Recommended For You",
                             actionText = "See All",
-                            onActionClick = { }
+                            onActionClick = { onSeeAllClick?.invoke("recommended") }
                         )
                     }
 
@@ -367,7 +366,7 @@ fun HomeScreen(
                         SectionHeader(
                             title = "Rent Academic Books",
                             actionText = "Browse All",
-                            onActionClick = { }
+                            onActionClick = { onSeeAllClick?.invoke("academic") }
                         )
                     }
 
@@ -393,7 +392,7 @@ fun HomeScreen(
                         SectionHeader(
                             title = "Used Books Near You",
                             actionText = "View Map",
-                            onActionClick = { }
+                            onActionClick = { onSeeAllClick?.invoke("nearby") }
                         )
                     }
 
@@ -517,12 +516,29 @@ private fun BookCard(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        Icons.Default.Book,
-                        contentDescription = "Book cover",
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(32.dp)
-                    )
+                    if (book.coverImageUrl.isNotBlank()) {
+                        println("book ${book}")
+                        AsyncImage(
+                            model = book.coverImageUrl,
+                            contentDescription = "Book cover",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                            onSuccess = {
+                                // Image loaded successfully
+                            },
+                            onError = {
+                                // Log the error for debugging
+                                println("Failed to load image: ${book.coverImageUrl}")
+                            }
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.Book,
+                            contentDescription = "Book cover",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
                 }
             }
 
@@ -598,12 +614,21 @@ private fun AcademicBookCard(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        Icons.Default.School,
-                        contentDescription = "Academic book",
-                        tint = RentAccent,
-                        modifier = Modifier.size(32.dp)
-                    )
+                    if (book.coverImageUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = book.coverImageUrl,
+                            contentDescription = "Book cover",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.School,
+                            contentDescription = "Academic book",
+                            tint = RentAccent,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
                 }
             }
 
@@ -678,12 +703,21 @@ private fun NearbyBookCard(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        Icons.Default.Book,
-                        contentDescription = "Book cover",
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(24.dp)
-                    )
+                    if (book.coverImageUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = book.coverImageUrl,
+                            contentDescription = "Book cover",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.Book,
+                            contentDescription = "Book cover",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
             }
 
@@ -787,12 +821,21 @@ private fun SearchResultBookCard(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        Icons.Default.Book,
-                        contentDescription = "Book cover",
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(32.dp)
-                    )
+                    if (book.coverImageUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = book.coverImageUrl,
+                            contentDescription = "Book cover",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.Book,
+                            contentDescription = "Book cover",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
                 }
             }
 

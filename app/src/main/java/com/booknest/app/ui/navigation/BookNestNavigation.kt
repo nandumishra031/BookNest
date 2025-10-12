@@ -23,6 +23,7 @@ import com.booknest.app.data.Order
 import com.booknest.app.ui.auth.LoginScreen
 import com.booknest.app.ui.auth.SignUpScreen
 import com.booknest.app.ui.book.BookDetailsScreen
+import com.booknest.app.ui.books.AllBooksScreen
 import com.booknest.app.ui.books.MyBooksScreen
 import com.booknest.app.ui.cart.CartScreen
 import com.booknest.app.ui.cart.CheckoutScreen
@@ -109,8 +110,10 @@ fun BookNestNavigation(
                     navController.navigate("book_details/${book.id}")
                 },
                 onCategoryClick = { category ->
-                    // Navigate to category filter or search with category
-                    // For now, we can leave this empty or implement later
+                    navController.navigate("all_books/$category")
+                },
+                onSeeAllClick = { category ->
+                    navController.navigate("all_books/$category")
                 }
             )
         }
@@ -522,6 +525,21 @@ fun BookNestNavigation(
 
         composable("privacy_settings") {
             PrivacySettingsScreen(
+                onBackClick = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable("all_books/{category}") { backStackEntry: NavBackStackEntry ->
+            val category = backStackEntry.arguments?.getString("category")
+
+            AllBooksScreen(
+                books = allBooks,
+                category = "",
+                onBookClick = { book ->
+                    navController.navigate("book_details/${book.id}")
+                },
                 onBackClick = {
                     navController.popBackStack()
                 }
