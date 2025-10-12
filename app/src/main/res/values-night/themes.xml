@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.BookNest" parent="android:Theme.Material.NoActionBar">
+        <!-- Prevent fullscreen mode -->
+        <item name="android:windowFullscreen">false</item>
+        <!-- Show system UI -->
+        <item name="android:fitsSystemWindows">true</item>
+        <!-- Status bar color that matches your app's dark theme -->
+        <item name="android:statusBarColor">@color/status_bar_color</item>
+        <!-- Navigation bar color that matches your app's dark theme -->
+        <item name="android:navigationBarColor">@color/navigation_bar_color</item>
+        <!-- Make status bar icons light for dark theme -->
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>
